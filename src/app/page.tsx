@@ -222,13 +222,14 @@ export default function Home() {
     enterprise: process.env.WHOP_PRODUCT_ID_ENTERPRISE,
   });
   // 🔥 Map price to Whop Product ID
+  // 🔥 HARDCODED PRODUCT IDs (Replace with YOUR actual Whop IDs)
   const productIdMap: Record<string, string> = {
-    '5': process.env.WHOP_PRODUCT_ID_STARTER || '',
-    '25': process.env.WHOP_PRODUCT_ID_BUSINESS || '',
-    '45': process.env.WHOP_PRODUCT_ID_CORPORATE || '',
-    '85': process.env.WHOP_PRODUCT_ID_ENTERPRISE || '',
+    '5': 'prod_E4LqwHMSpsAeA', // 🔥 Your Starter product ID
+    '25': 'prod_yW6DIDkhdrFLf', // 🔥 Your Business product ID (replace)
+    '45': 'prod_IBoJWlU1a6NJC', // 🔥 Your Corporate product ID (replace)
+    '85': 'prod_eHSxJk0SRhKJ8', // 🔥 Your Enterprise product ID (replace)
   };
-
+  console.log('🔍 Product IDs hardcoded:', productIdMap);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -376,11 +377,13 @@ export default function Home() {
     }
 
     const productId = productIdMap[stats.price.toString()];
+    console.log('🔍 Price:', stats.price);
+    console.log('🔍 Product ID found:', productId);
     if (!productId) {
       alert('No product found for this price tier. Please contact support.');
       return;
     }
-
+    
     // Store file data in sessionStorage for after payment
     sessionStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
