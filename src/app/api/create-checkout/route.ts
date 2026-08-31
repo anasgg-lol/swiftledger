@@ -1,12 +1,15 @@
+// src/app/api/create-checkout/route.ts
 import { NextResponse } from 'next/server';
 
-// 🔥 CORRECT: v1/checkout_links (with underscore)
+// The correct base URL for Whop's API v1
 const WHOP_API_URL = 'https://api.whop.com/v1';
 
 export async function POST(req: Request) {
   try {
     const { price, pageCount, transactionCount, fileName } = await req.json();
 
+    // Map the price to the corresponding Whop Product ID
+    // IMPORTANT: Replace these placeholder IDs with your actual Whop Product IDs!
     const productMap: Record<string, string> = {
       '5': process.env.WHOP_PRODUCT_ID_STARTER || '',
       '25': process.env.WHOP_PRODUCT_ID_BUSINESS || '',
@@ -26,10 +29,11 @@ export async function POST(req: Request) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-    console.log('🔍 Creating Whop checkout with product ID:', productId);
+    console.log(`🔍 Creating Whop checkout for product ID: ${productId} (${pageCount} pages, $${price})`);
 
-    // 🔥 TRY: /v1/checkout_links (with underscore)
-    const response = await fetch(`${WHOP_API_URL}/checkout_links`, {
+    // --- THE CORRECT WHOP API CALL ---
+    // Endpoint: POST /v1/checkout/links
+    const response = await fetch(`${WHOP_API_URL}/checkout/links`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -37,8 +41,10 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         product_id: productId,
+        // These URLs are where the user is sent after payment
         success_url: `${appUrl}/payment/success?pageCount=${pageCount}&txCount=${transactionCount}&file=${encodeURIComponent(fileName)}`,
         cancel_url: `${appUrl}/payment/cancel`,
+        // Pass metadata to identify the purchase
         metadata: {
           page_count: pageCount,
           transaction_count: transactionCount,
@@ -49,33 +55,39 @@ export async function POST(req: Request) {
 
     const data = await response.json();
 
-    console.log('📥 Whop response status:', response.status);
-    console.log('📥 Whop response data:', JSON.stringify(data, null, 2));
+    // Log the full response for debugging
+    console.log('📥 Whop API Response Status:', response.status);
+    console.log('📥 Whop API Response Body:', JSON.stringify(data, null, 2));
 
     if (!response.ok) {
-      console.error('❌ Whop API error:', data);
+      // The error message from Whop will be in data.message or data.error.message
+      const errorMessage = data?.error?.message || data?.message || 'Failed to create checkout link';
+      console.error('❌ Whop API Error:', errorMessage);
       return NextResponse.json(
-        { error: data?.error?.message || data?.message || 'Failed to create checkout' },
-        { status: 500 }
+        { error: errorMessage },
+        { status: response.status }
       );
     }
 
-    const checkoutUrl = data?.data?.url || data?.url;
+    // The checkout URL is typically in data.data.url
+    const checkoutUrl = data?.data?.url;
 
     if (!checkoutUrl) {
-      console.error('❌ No checkout URL in response:', data);
+      console.error('❌ No checkout URL in Whop response:', data);
       return NextResponse.json(
-        { error: 'No checkout URL returned' },
+        { error: 'No checkout URL returned from Whop' },
         { status: 500 }
       );
     }
+
+    console.log(`✅ Whop checkout link created successfully: ${checkoutUrl}`);
 
     return NextResponse.json({
       checkoutUrl: checkoutUrl,
       success: true,
     });
   } catch (error) {
-    console.error('❌ Checkout error:', error);
+    console.error('❌ Checkout creation error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to create checkout' },
       { status: 500 }
