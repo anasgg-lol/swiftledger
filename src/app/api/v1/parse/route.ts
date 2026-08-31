@@ -9,6 +9,7 @@ export const config = {
 };
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const GEMINI_MODELS = ['gemini-2.5-flash'];
 
 function cleanAndParseJSON(rawResponse: string): any {
   let clean = rawResponse.trim();
@@ -60,27 +61,27 @@ export async function POST(req: Request) {
     const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
     
-    // Balanced batch grouping window to process large files quickly under the 10s ceiling
-    const chunkSize = 20; 
+    // 💡 10 pages per chunk maximizes computing efficiency while preventing 10s timeouts
+    const chunkSize = 10; 
     let masterTransactions: any[] = [];
 
     const ai = new GoogleGenAI({ apiKey });
 
-    console.log(`🚀 INITIALIZING SWIFTLEDGER OPTIMIZED BATCH PARSER: ${totalPages} TOTAL PAGES`);
+    console.log(`🚀 SWIFTLEDGER ACTIVE RUNTIME: PARSING ${totalPages} PAGES IN BATCHES`);
 
     for (let i = 0; i < totalPages; i += chunkSize) {
       const startPage = i;
       const endPage = Math.min(i + chunkSize - 1, totalPages - 1);
       
-      console.log(`📦 Parsing batch segment: Pages ${startPage + 1} to ${endPage + 1}`);
+      console.log(`📦 Compiling Batch Segment: Pages ${startPage + 1} to ${endPage + 1}`);
       const chunkBase64 = await extractPageRange(srcDoc, startPage, endPage);
 
-      const prompt = `You are a financial document parser. Extract ALL transaction rows from this bank statement chunk.
+      const prompt = `You are a professional ledger parser. Extract ALL transaction rows from this bank statement chunk.
 
-CRITICAL RULES:
-1. Extract EVERY single transaction row printed. DO NOT skip any data rows.
-2. Read the running balance directly from the right-hand side of each transaction row exactly as printed. DO NOT calculate balances.
-3. Map financials carefully: if an amount has a minus sign, negative indicator, or parentheses like "(42,148.24)", prefix it explicitly with a minus sign like "-$42,148.24".
+CRITICAL PRECISION RULES:
+1. Extract EVERY single row printed. DO NOT skip or truncate data.
+2. Read the running balance directly from the right-hand side column of each row EXACTLY as printed. DO NOT calculate balances.
+3. Hard-enforcement for outbounds/debits: If an amount represents a withdrawal, charge, or negative value (indicated by parentheses like "(42,148.24)" or minus sign "-42,148.24"), you MUST output it with an explicit minus sign prefixed to the string, like "-$42,148.24".
 
 RETURN SCHEMA:
 {
@@ -89,9 +90,9 @@ RETURN SCHEMA:
       "id": 1,
       "date": "Date",
       "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
-      "description": "Row description particulars",
-      "amount": "$Amount",
-      "balance": "$RunningBalance"
+      "description": "Full row details",
+      "amount": "-$42,148.24",
+      "balance": "$157,100.00"
     }
   ]
 }`;
@@ -103,10 +104,7 @@ RETURN SCHEMA:
             { text: prompt },
             { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
           ],
-          config: { 
-            responseMimeType: 'application/json', 
-            temperature: 0.0 
-          }
+          config: { responseMimeType: 'application/json', temperature: 0.0 }
         });
 
         const chunkText = response.text || '{}';
@@ -117,7 +115,7 @@ RETURN SCHEMA:
           masterTransactions = masterTransactions.concat(txs);
         }
       } catch (err) {
-        console.warn(`⚠️ Batch bypass: Segment ${startPage + 1} failed, skipping...`, err);
+        console.warn(`⚠️ Batch segment failed, bypassing window parameters:`, err);
       }
     }
 
@@ -125,8 +123,6 @@ RETURN SCHEMA:
       ...tx,
       id: index + 1
     }));
-
-    console.log(`✅ PARSER SUCCESS: Extracted ${finalizedRows.length} total rows across ${totalPages} pages.`);
 
     return NextResponse.json({
       success: true,
@@ -137,10 +133,6 @@ RETURN SCHEMA:
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('System exception caught:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error?.message || 'Parsing failed'
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }

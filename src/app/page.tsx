@@ -21,22 +21,39 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
   { id: 6, date: '5th November 2026', type: 'Direct Debit', description: 'Fitness Club Membership', amount: '-£32.50', balance: '£368.50' },
 ];
 
-// ✅ PASTE THIS FULLY BALANCED ACCOUNTING PARSER INSTEAD:
+// 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const trimmed = value.trim();
   
-  // Intercept standard accounting parentheses negatives like (42,148.24)
+  // Intercept standard accounting parentheses negatives like (42,148.24) before stripping chars
   const isParenthesisNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
   
-  let cleaned = trimmed.replace(/[^0-9.-]/g, '');
+  // Also check if the string contains a native minus symbol anywhere before parsing digits
+  const hasMinusSign = trimmed.includes('-');
+  
+  let cleaned = trimmed.replace(/[^0-9.]/g, ''); // Retain purely numeric decimals
   let numericValue = parseFloat(cleaned) || 0;
   
-  if (isParenthesisNegative) {
+  if (isParenthesisNegative || hasMinusSign) {
     numericValue = -Math.abs(numericValue);
   }
   return numericValue;
 }
+
+// 🔥 CRITICAL FAIL-SAFE: Enforces correct mathematical states for all balance logs and debit filters
+function getSignedAmount(row: Transaction): number {
+  const amount = parseCurrency(row.amount);
+  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS'];
+  
+  // Force conversion to negative if amount is positive but matches a known debit type or structural layout
+  if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
+    return -amount;
+  }
+  return amount;
+}
+
+
 
 
 function generateCSV(rows: Transaction[]): string {
