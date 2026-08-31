@@ -25,6 +25,7 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
 // ✅ FULL REPLACEMENT BLOCK: COPY AND PASTE THIS EXACT SECTION
 // 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
 // ✅ PASTE THIS PROVEN ACCOUNTING BALANCE PARSER REPLACEMENT SNIPPET:
+// 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const trimmed = value.trim();
@@ -55,6 +56,7 @@ function getSignedAmount(row: Transaction): number {
   }
   return amount;
 }
+
 
 
 
