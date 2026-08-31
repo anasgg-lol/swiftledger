@@ -214,7 +214,13 @@ export default function Home() {
   // 🔥 NEW: Checkout modal state
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutProductId, setCheckoutProductId] = useState('');
-
+  // 🔥 DEBUG: Log your product IDs
+  console.log('🔍 Product IDs from env:', {
+    starter: process.env.WHOP_PRODUCT_ID_STARTER,
+    business: process.env.WHOP_PRODUCT_ID_BUSINESS,
+    corporate: process.env.WHOP_PRODUCT_ID_CORPORATE,
+    enterprise: process.env.WHOP_PRODUCT_ID_ENTERPRISE,
+  });
   // 🔥 Map price to Whop Product ID
   const productIdMap: Record<string, string> = {
     '5': process.env.WHOP_PRODUCT_ID_STARTER || '',
