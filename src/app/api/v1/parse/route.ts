@@ -155,7 +155,7 @@ async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
 }
 
 // ============================================================
-// 🔥 POST HANDLER – ULTRA RELIABLE
+// 🔥 POST HANDLER – FULLY FIXED
 // ============================================================
 export async function POST(req: Request) {
   try {
@@ -211,18 +211,24 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey });
 
     // ============================================================
-    // 🔥 IMPROVED PROMPT – FORCES BALANCE EXTRACTION
+    // 🔥 IMPROVED PROMPT – PARENTHESIS HANDLING + BALANCE FORCE
     // ============================================================
     const prompt = `You are a financial document parser. Extract ALL transactions from this bank statement.
 
-CRITICAL RULES:
+CRITICAL RULES FOR AMOUNTS:
+1. If an amount is in parentheses like "(1,476.44)", it is a DEBIT (negative) - output it as "-$1,476.44" or "-£1,476.44".
+2. If an amount has a minus sign like "-1,476.44", it is a DEBIT (negative) - output it as "-$1,476.44".
+3. If an amount is positive with no parentheses or minus sign, it is a CREDIT (positive) - output it as "$1,476.44".
+4. The amount MUST include the currency symbol ($, £, €, etc.).
+5. The amount MUST be a string with the sign, like "$1,476.44" or "-£1,476.44".
+
+CRITICAL RULES FOR BALANCES:
 1. EVERY transaction MUST include a "balance" field.
 2. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
-3. Look for a column labeled "Balance", "Running Balance", "Account Balance", or "Closing Balance".
-4. If you see a statement summary at the top with "Opening Balance" and "Closing Balance", use those.
+3. Look for the RIGHTMOST column in the table - that's the balance.
+4. The balance is usually shown as a positive number without parentheses.
 5. The balance must include the currency symbol ($, £, €, etc.).
 6. DO NOT calculate the balance. USE the balance shown on the statement.
-7. If the statement shows the balance at the end of each transaction, use that.
 
 THE EXACT SCHEMA:
 {
@@ -232,16 +238,17 @@ THE EXACT SCHEMA:
       "date": "10/01/2025",
       "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order | Wire | ACH | POS | Check | Fee",
       "description": "Full transaction description",
-      "amount": "$1,234.56",
+      "amount": "$1,234.56",    // or "-$1,234.56" for debits
       "balance": "$157,100.00"
     }
   ]
 }
 
-EXAMPLES OF CORRECT BALANCE EXTRACTION:
-- If the statement shows "$157,100.00" as the balance, output "$157,100.00".
-- If the statement shows "£500.00" as the balance, output "£500.00".
-- If the statement shows "€1,200.00" as the balance, output "€1,200.00".
+EXAMPLES OF CORRECT PARSING:
+- PDF shows "(1,476.44)" → amount: "-$1,476.44"
+- PDF shows "1,476.44" → amount: "$1,476.44"
+- PDF shows "-1,476.44" → amount: "-$1,476.44"
+- PDF shows "$157,100.00" → balance: "$157,100.00"
 
 OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION. JUST THE JSON.`;
 
@@ -257,8 +264,8 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION. JUST THE JSON.`;
       ],
       config: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 8192, // 🔥 Increased for more accurate extraction
-        temperature: 0.0, // 🔥 Zero temperature = deterministic, consistent output
+        maxOutputTokens: 8192,
+        temperature: 0.0,
       },
     });
 
@@ -269,7 +276,7 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION. JUST THE JSON.`;
       ? parsedData
       : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
 
-    // 🔥 Add debug logs to see what balance is being extracted
+    // 🔥 DEBUG LOGS - See what balance is being extracted
     if (transactions.length > 0) {
       console.log('📊 First transaction:', {
         date: transactions[0]?.date,
