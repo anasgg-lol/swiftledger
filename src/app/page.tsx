@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Footer from './components/Footer';
+import WhopCheckoutModal from './components/WhopCheckoutModal';
 
 interface Transaction {
   id: number;
@@ -210,6 +211,18 @@ export default function Home() {
     qbo: true,
   });
 
+  // 🔥 NEW: Checkout modal state
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [checkoutProductId, setCheckoutProductId] = useState('');
+
+  // 🔥 Map price to Whop Product ID
+  const productIdMap: Record<string, string> = {
+    '5': process.env.WHOP_PRODUCT_ID_STARTER || '',
+    '25': process.env.WHOP_PRODUCT_ID_BUSINESS || '',
+    '45': process.env.WHOP_PRODUCT_ID_CORPORATE || '',
+    '85': process.env.WHOP_PRODUCT_ID_ENTERPRISE || '',
+  };
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -346,9 +359,7 @@ export default function Home() {
     setShowStats(true);
   };
 
-  // ============================================================
-  // 🔥 UPDATED: WHOP CHECKOUT
-  // ============================================================
+  // 🔥 Handle payment + download
   const handlePayAndDownload = async () => {
     if (!stats) return;
 
@@ -358,38 +369,40 @@ export default function Home() {
       return;
     }
 
-    setLoading(true);
+    const productId = productIdMap[stats.price.toString()];
+    if (!productId) {
+      alert('No product found for this price tier. Please contact support.');
+      return;
+    }
 
-    try {
-      const res = await fetch('/api/create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          price: stats.price,
-          pageCount: stats.pageCount,
-          transactionCount: stats.transactionCount,
-          fileName: fileName || 'statement',
-        }),
-      });
+    // Store file data in sessionStorage for after payment
+    sessionStorage.setItem('pendingDownload', JSON.stringify({
+      rows: parsedData,
+      fileName: fileName || 'statement',
+      formats: formats,
+      bank: selectedBank,
+    }));
 
-      const data = await res.json();
+    setCheckoutProductId(productId);
+    setIsCheckoutOpen(true);
+  };
 
-      if (!data.success) {
-        alert(data.error || 'Something went wrong. Please try again.');
-        setLoading(false);
-        return;
+  // 🔥 Handle successful payment
+  const handlePaymentSuccess = () => {
+    const pending = sessionStorage.getItem('pendingDownload');
+    if (pending) {
+      try {
+        const data = JSON.parse(pending);
+        downloadAllFormats(data.rows, data.fileName, data.formats, data.bank);
+        sessionStorage.removeItem('pendingDownload');
+        
+        setShowStats(false);
+        setParsedData([]);
+        setFileName('');
+      } catch (error) {
+        console.error('Download error:', error);
+        alert('Failed to download your files. Please try again.');
       }
-
-      if (data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
-      } else {
-        alert('No checkout URL returned. Please try again.');
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error('Checkout error:', error);
-      alert('Failed to create checkout. Please try again.');
-      setLoading(false);
     }
   };
 
@@ -410,6 +423,7 @@ export default function Home() {
       <div className="orb orb-1" />
       <div className="orb orb-2" />
 
+      {/* ===== HERO ===== */}
       <div className="text-center max-w-4xl mx-auto z-10 mt-10 animate-fade-up">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium uppercase tracking-wider mb-4">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -430,6 +444,7 @@ export default function Home() {
         </p>
       </div>
 
+      {/* ===== COMPETITOR BADGE ===== */}
       <div className="w-full max-w-2xl mx-auto z-10 mt-6 animate-fade-up-delay-1">
         <div className="bg-slate-900/60 border border-slate-800/50 rounded-2xl p-3.5 flex flex-wrap items-center justify-center gap-3 md:gap-5">
           {[
@@ -446,6 +461,7 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ===== TRUST BAR ===== */}
       <div className="w-full max-w-4xl mx-auto z-10 mt-8 animate-fade-up-delay-2">
         <p className="text-center text-[9px] text-slate-500 uppercase tracking-[0.2em] mb-4">Trusted by finance teams at</p>
         <div className="flex flex-wrap items-center justify-center gap-8 md:gap-10">
@@ -455,6 +471,7 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ===== UPLOAD ZONE ===== */}
       <div className="w-full max-w-xl mx-auto z-10 mt-8 animate-fade-up-delay-3">
         <div
           onClick={() => fileInputRef.current?.click()}
@@ -498,6 +515,7 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ===== LOADING ===== */}
       {loading && (
         <div className="w-full max-w-2xl mx-auto z-10 mt-6 animate-fade-up">
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
@@ -524,6 +542,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* ===== STATS CARD ===== */}
       {showStats && stats && parsedData.length > 0 && !loading && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-6 animate-fade-up-delay-1">
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
@@ -611,6 +630,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* ===== PREVIEW TABLE ===== */}
       {parsedData.length > 0 && !loading && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-4 animate-fade-up-delay-2">
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
@@ -663,6 +683,19 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* ===== WHOP CHECKOUT MODAL ===== */}
+      <WhopCheckoutModal
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        productId={checkoutProductId}
+        onSuccess={handlePaymentSuccess}
+        metadata={{
+          page_count: stats?.pageCount || 0,
+          transaction_count: stats?.transactionCount || 0,
+          file_name: fileName || 'statement',
+        }}
+      />
 
       <div className="w-full max-w-6xl mx-auto mt-16 z-10">
         <Footer />
