@@ -3,12 +3,9 @@ import { GoogleGenAI } from '@google/genai';
 import sharp from 'sharp';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
 const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
-  'gemini-3.6-flash',
-  'gemini-3.7-flash',
 ];
 
 function cleanAndParseJSON(rawResponse: string): any {
@@ -31,13 +28,14 @@ function cleanAndParseJSON(rawResponse: string): any {
   }
 }
 
-// ============ ENGINE 1: pdf-parse (FIXED IMPORT) ============
+// ============================================================
+// 🔥 FIXED: pdf-parse with proper type handling
+// ============================================================
 async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
   try {
-    // Dynamic import with type assertion to bypass TypeScript
-    const pdfParseModule = await import('pdf-parse');
-    // @ts-ignore - pdf-parse might not have a default export in ESM mode
-    const pdfParse = pdfParseModule.default || pdfParseModule;
+    // Using require instead of import to avoid TypeScript issues
+    // @ts-ignore
+    const pdfParse = require('pdf-parse');
     const data = await pdfParse(buffer);
     return data.numpages || 1;
   } catch (error) {
@@ -46,19 +44,31 @@ async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
   }
 }
 
-// ============ ENGINE 2: pdfjs-dist ============
+// ============================================================
+// 🔥 FIXED: pdfjs-dist with proper import
+// ============================================================
 async function getPageCountPdfJs(buffer: Buffer): Promise<number | null> {
   try {
-    const pdfjsLib = await import('pdfjs-dist');
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-    return pdf.numPages;
+    // Try legacy build first
+    try {
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      return pdf.numPages;
+    } catch {
+      // Fallback to regular import
+      const pdfjsLib = await import('pdfjs-dist');
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      return pdf.numPages;
+    }
   } catch (error) {
     console.warn('⚠️ pdfjs-dist failed:', error);
     return null;
   }
 }
 
-// ============ ENGINE 3: Gemini Vision (FINAL FALLBACK) ============
+// ============================================================
+// 🔥 Gemini Vision Fallback (for scanned/corrupted PDFs)
+// ============================================================
 async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -94,9 +104,11 @@ async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
   }
 }
 
-// ============ MASTER PAGE COUNT FUNCTION ============
+// ============================================================
+// 🔥 MASTER PAGE COUNT FUNCTION
+// ============================================================
 async function getPDFPageCount(buffer: Buffer): Promise<number> {
-  // Try pdf-parse first
+  // Try pdf-parse first (fastest)
   const count1 = await getPageCountPdfParse(buffer);
   if (count1 !== null && count1 > 0) {
     console.log(`📄 pdf-parse: ${count1} pages`);
@@ -110,14 +122,16 @@ async function getPDFPageCount(buffer: Buffer): Promise<number> {
     return count2;
   }
 
-  // Final fallback: Gemini Vision
+  // Final fallback: Gemini Vision (SLOW - only for scanned PDFs)
   console.log('⚠️ pdf-parse and pdfjs-dist failed. Using Gemini Vision fallback.');
   const count3 = await getPageCountGeminiVision(buffer);
   console.log(`📄 Gemini Vision: ${count3} pages`);
   return count3;
 }
 
-// ============ GEMINI GENERATION WITH FALLBACK ============
+// ============================================================
+// 🔥 GEMINI GENERATION WITH FALLBACK
+// ============================================================
 async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
   let lastError: any = null;
   for (const modelName of GEMINI_MODELS) {
@@ -146,7 +160,9 @@ async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
   throw lastError || new Error('All Gemini model endpoints failed.');
 }
 
-// ============ POST HANDLER ============
+// ============================================================
+// 🔥 POST HANDLER
+// ============================================================
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -177,25 +193,22 @@ export async function POST(req: Request) {
     let mimeType = file.type || '';
     let pageCount = 1;
 
-    // Infer mime-type
     if (!mimeType) {
       if (file.name.endsWith('.pdf')) mimeType = 'application/pdf';
       else if (file.name.endsWith('.png')) mimeType = 'image/png';
       else mimeType = 'image/jpeg';
     }
 
-    // Get page count for PDFs using triple fallback
     if (mimeType === 'application/pdf') {
       pageCount = await getPDFPageCount(rawBuffer);
       console.log(`📄 Final page count: ${pageCount}`);
     }
 
-    // Process images with Sharp
     if (mimeType.startsWith('image/')) {
       processedBuffer = await sharp(rawBuffer)
         .rotate()
-        .resize({ width: 1600, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85 })
+        .resize({ width: 1200, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 75 })
         .toBuffer();
       mimeType = 'image/jpeg';
     }
