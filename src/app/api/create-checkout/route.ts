@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-const WHOP_API_URL = 'https://api.whop.com/v2';
+// 🔥 Use the checkout-requests endpoint (matches your permissions)
+const WHOP_API_URL = 'https://api.whop.com/v1';
 
 export async function POST(req: Request) {
   try {
@@ -26,36 +27,53 @@ export async function POST(req: Request) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-    // Create Whop checkout link
-    const response = await fetch(`${WHOP_API_URL}/products/${productId}/checkout-links`, {
+    console.log('🔍 Creating Whop checkout with product ID:', productId);
+
+    // 🔥 Use the checkout-requests endpoint (matches your permissions)
+    const response = await fetch(`${WHOP_API_URL}/checkout-requests`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.WHOP_API_KEY}`,
       },
       body: JSON.stringify({
+        product_id: productId,
+        success_url: `${appUrl}/payment/success?pageCount=${pageCount}&txCount=${transactionCount}&file=${encodeURIComponent(fileName)}`,
+        cancel_url: `${appUrl}/payment/cancel`,
         metadata: {
           page_count: pageCount,
           transaction_count: transactionCount,
           file_name: fileName,
         },
-        success_url: `${appUrl}/payment/success?pageCount=${pageCount}&txCount=${transactionCount}&file=${encodeURIComponent(fileName)}`,
-        cancel_url: `${appUrl}/payment/cancel`,
       }),
     });
 
     const data = await response.json();
 
+    console.log('📥 Whop response status:', response.status);
+    console.log('📥 Whop response data:', JSON.stringify(data, null, 2));
+
     if (!response.ok) {
       console.error('❌ Whop API error:', data);
       return NextResponse.json(
-        { error: data?.error?.message || 'Failed to create checkout' },
+        { error: data?.error?.message || data?.message || 'Failed to create checkout' },
+        { status: 500 }
+      );
+    }
+
+    // 🔥 The response format might be different
+    const checkoutUrl = data.data?.url || data.url || data.checkout_url;
+
+    if (!checkoutUrl) {
+      console.error('❌ No checkout URL in response:', data);
+      return NextResponse.json(
+        { error: 'No checkout URL returned' },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
-      checkoutUrl: data.data.url,
+      checkoutUrl: checkoutUrl,
       success: true,
     });
   } catch (error) {
