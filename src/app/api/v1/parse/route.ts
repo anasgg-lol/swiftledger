@@ -10,6 +10,9 @@ export const config = {
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
+// 🔥 CRITICAL UPGRADE: Enforce the required new active core model asset exclusively
+const GEMINI_MODELS = ['gemini-3.6-flash'];
+
 function cleanAndParseJSON(rawResponse: string): any {
   let clean = rawResponse.trim();
   clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -60,35 +63,48 @@ export async function POST(req: Request) {
     const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
 
-    // ⚡ STEP 1: FAST LOCAL EXTAL PULL ATTEMPT (COMPLETES IN MILLISECONDS)
+    // ⚡ STEP 1: PARSE EMBEDDED TEXT LAYER INSTANTLY (COMPLETES IN MILLISECONDS)
     let localTextContent = '';
     try {
       const pdfParse = require('pdf-parse');
       const parsed = await pdfParse(rawBuffer);
       localTextContent = parsed.text || '';
     } catch (e) {
-      console.warn('⚠️ Local text pull failed, using fallback.');
+      console.warn('⚠️ Local text layer parse fallback activated.');
     }
 
     const ai = new GoogleGenAI({ apiKey });
     let masterTransactions: any[] = [];
 
-    // If text layers exist, pass the raw text tokens directly to cut image execution delays entirely
+    // If a valid embedded digital font mapping layout is found, execute text token conversion
     if (localTextContent.trim().length > 50) {
-      console.log('⚡ DIGITAL PDF DETECTED: RUNNING INSTANT TEXT TOKEN MATRIX...');
+      console.log('⚡ DIGITAL FILE TRAFFIC DETECTED: EXECUTING INSTANT TOKEN PARSE...');
       
-      const textPrompt = `You are a financial spreadsheet architect. Convert this raw bank statement text dump into a structured JSON array.
-      Extract EVERY single row. Do not truncate. Read the balance directly from the row.
-      Withdrawals/debits MUST be prefixed with a minus sign like "-$42,148.24".
+      const textPrompt = `You are an elite financial database compiler. Convert this raw bank statement text dump into a clean, structured JSON transaction array.
+      CRITICAL ACCOUNTING RULES:
+      1. Extract EVERY single transaction row printed. DO NOT skip or truncate data.
+      2. Read the running balance directly from the right-hand column metrics. DO NOT recalculate or guess balances.
+      3. For outbounds/debits: If an amount represents a withdrawal, charge, fee, or negative indicator, you MUST output it prefixed with an explicit minus sign, like "-$42,148.24".
 
-      DATA DUMP:
+      RAW DATA INPUT DUMP:
       ${localTextContent}
 
-      RETURN SCHEMA:
-      { "transactions": [{ "id": 1, "date": "Date", "type": "Type", "description": "Details", "amount": "-$42,148.24", "balance": "$157,100.00" }] }`;
+      RETURN TARGET SCHEMA:
+      {
+        "transactions": [
+          {
+            "id": 1,
+            "date": "Date",
+            "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
+            "description": "Row details",
+            "amount": "-$42,148.24",
+            "balance": "$157,100.00"
+          }
+        ]
+      }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash', // Fast structural text extraction model
+        model: 'gemini-3.6-flash', // Fully synchronized active production engine
         contents: [{ text: textPrompt }],
         config: { responseMimeType: 'application/json', temperature: 0.0 }
       });
@@ -96,9 +112,10 @@ export async function POST(req: Request) {
       const parsedData = cleanAndParseJSON(response.text || '{}');
       masterTransactions = parsedData.transactions || parsedData.rows || parsedData || [];
     } else {
-      // 📸 FALLBACK STEP 2: CONCURRENT IMAGE SHARDING BRACKET FOR SCANS
-      console.log('📸 SCANNED PDF DETECTED: INITIALIZING PARALLEL VISUAL CHUNKS...');
-      const chunkSize = 15; 
+      // 📸 STEP 2: CONCURRENT GRAPHIC VISUAL SHARDING FOR SCANNED DOCUMENTS / IMAGES
+      console.log('📸 SCANNED LAYER DETECTED: LAUNCHING MULTI-THREADED ASYNC VISUAL PLUMBING...');
+      
+      const chunkSize = 45; 
       const chunks: { start: number; end: number }[] = [];
 
       for (let i = 0; i < totalPages; i += chunkSize) {
@@ -107,15 +124,18 @@ export async function POST(req: Request) {
 
       const chunkPromises = chunks.map(async (chunk) => {
         const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
+        
         const visualPrompt = `Extract ALL transaction rows from this bank statement chunk.
-        Withdrawals/debits MUST be prefixed with a minus sign like "-$42,148.24".
-        Read the balance column exactly as printed. Do not calculate.
+        CRITICAL RULES:
+        1. Extract EVERY single transaction row printed. DO NOT skip or truncate rows.
+        2. Read the running balance directly from the right column exactly as printed. Do not calculate.
+        3. Withdrawals/debits MUST be prefixed explicitly with a minus sign like "-$42,148.24".
         
         RETURN SCHEMA:
         { "transactions": [{ "id": 1, "date": "Date", "type": "Type", "description": "Details", "amount": "-$42,148.24", "balance": "$157,100.00" }] }`;
 
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.6-flash', // Fully upgraded active production visual parser
           contents: [
             { text: visualPrompt },
             { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
@@ -129,7 +149,9 @@ export async function POST(req: Request) {
 
       const resolvedSegments = await Promise.all(chunkPromises);
       for (const segment of resolvedSegments) {
-        if (Array.isArray(segment)) masterTransactions = masterTransactions.concat(segment);
+        if (Array.isArray(segment)) {
+          masterTransactions = masterTransactions.concat(segment);
+        }
       }
     }
 
@@ -138,16 +160,18 @@ export async function POST(req: Request) {
       id: index + 1
     }));
 
+    console.log(`✅ HYBRID PARSER COMPLETE: Extracted ${finalizedRows.length} total transaction rows.`);
+
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Gemini Hybrid Core',
+      engine_used: 'SwiftLedger Gemini 3.6 Hybrid Core',
       total_transactions: finalizedRows.length,
       page_count: totalPages,
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('System exception caught:', error);
+    console.error('Core Exception caught:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }
