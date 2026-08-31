@@ -22,17 +22,18 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
 ];
 
 // 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
+// ✅ FULL REPLACEMENT BLOCK: COPY AND PASTE THIS EXACT SECTION
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const trimmed = value.trim();
   
-  // Intercept standard accounting parentheses negatives like (42,148.24) before stripping chars
+  // Check for standard accounting parentheses negative formats like (438,176.22)
   const isParenthesisNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
   
-  // Also check if the string contains a native minus symbol anywhere before parsing digits
+  // Check for explicit negative indicators or minus signs anywhere in the string
   const hasMinusSign = trimmed.includes('-');
   
-  let cleaned = trimmed.replace(/[^0-9.]/g, ''); // Retain purely numeric decimals
+  let cleaned = trimmed.replace(/[^0-9.]/g, ''); // Extract only digits and decimals
   let numericValue = parseFloat(cleaned) || 0;
   
   if (isParenthesisNegative || hasMinusSign) {
@@ -41,18 +42,23 @@ function parseCurrency(value: string): number {
   return numericValue;
 }
 
-// 🔥 CRITICAL FAIL-SAFE: Enforces correct mathematical states for all balance logs and debit filters
+// Automatically guards math symbols by matching explicit transaction keyword identifiers
 function getSignedAmount(row: Transaction): number {
   const amount = parseCurrency(row.amount);
-  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS'];
+  const debitKeywords = ['DEBIT', 'WD', 'PAYMENT', 'OUTGOING', 'FEE', 'CHARGE', 'SUB', 'WITHDRAWAL', 'TAX'];
   
-  // Force conversion to negative if amount is positive but matches a known debit type or structural layout
-  if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
+  const matchesDebit = debitKeywords.some(kw => 
+    row.type.toUpperCase().includes(kw) || 
+    row.description.toUpperCase().includes(kw) ||
+    row.amount.includes('-') ||
+    row.amount.startsWith('(')
+  );
+
+  if (amount > 0 && matchesDebit) {
     return -amount;
   }
   return amount;
 }
-
 
 
 

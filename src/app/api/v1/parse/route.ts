@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
-import { PDFDocument } from 'pdf-lib';
+import sharp from 'sharp';
 
 export const config = {
   api: {
-    bodyParser: false, 
+    bodyParser: true,
   },
 };
 
@@ -31,15 +31,21 @@ function cleanAndParseJSON(rawResponse: string): any {
   }
 }
 
-async function extractPageRange(srcDoc: PDFDocument, start: number, end: number): Promise<string> {
-  const newDoc = await PDFDocument.create();
-  const rangeIndices = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-  const copiedPages = await newDoc.copyPages(srcDoc, rangeIndices);
-  copiedPages.forEach(page => newDoc.addPage(page));
-  
-  const pdfBytes = await newDoc.save();
-  const uint8Array = new Uint8Array(pdfBytes);
-  return Buffer.from(uint8Array.buffer, uint8Array.byteOffset, uint8Array.byteLength).toString('base64');
+async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
+  try {
+    const pdfParse = require('pdf-parse');
+    const data = await pdfParse(buffer);
+    return data.numpages || 1;
+  } catch (error) {
+    console.warn('⚠️ pdf-parse failed:', error);
+    return null;
+  }
+}
+
+async function getPDFPageCount(buffer: Buffer): Promise<number> {
+  const count1 = await getPageCountPdfParse(buffer);
+  if (count1 !== null && count1 > 0) return count1;
+  return 1;
 }
 
 export async function POST(req: Request) {
@@ -56,83 +62,83 @@ export async function POST(req: Request) {
     }
 
     const bytes = await file.arrayBuffer();
-    const rawBuffer = Buffer.from(bytes);
+    let processedBuffer = Buffer.from(bytes);
+    let mimeType = file.type || '';
+    let pageCount = 1;
 
-    const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
-    const totalPages = srcDoc.getPageCount();
-    
-    // 💡 10 pages per chunk maximizes computing efficiency while preventing 10s timeouts
-    const chunkSize = 10; 
-    let masterTransactions: any[] = [];
+    if (!mimeType) {
+      if (file.name.endsWith('.pdf')) mimeType = 'application/pdf';
+      else if (file.name.endsWith('.png')) mimeType = 'image/png';
+      else mimeType = 'image/jpeg';
+    }
 
+    if (mimeType === 'application/pdf') {
+      pageCount = await getPDFPageCount(processedBuffer);
+    }
+
+    if (mimeType.startsWith('image/')) {
+      processedBuffer = await sharp(processedBuffer)
+        .rotate()
+        .resize({ width: 1200, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 75 })
+        .toBuffer();
+      mimeType = 'image/jpeg';
+    }
+
+    const base64Data = processedBuffer.toString('base64');
     const ai = new GoogleGenAI({ apiKey });
 
-    console.log(`🚀 SWIFTLEDGER ACTIVE RUNTIME: PARSING ${totalPages} PAGES IN BATCHES`);
-
-    for (let i = 0; i < totalPages; i += chunkSize) {
-      const startPage = i;
-      const endPage = Math.min(i + chunkSize - 1, totalPages - 1);
-      
-      console.log(`📦 Compiling Batch Segment: Pages ${startPage + 1} to ${endPage + 1}`);
-      const chunkBase64 = await extractPageRange(srcDoc, startPage, endPage);
-
-      const prompt = `You are a professional ledger parser. Extract ALL transaction rows from this bank statement chunk.
+    const prompt = `You are a financial document parser. Extract ALL transaction rows from this bank statement.
 
 CRITICAL PRECISION RULES:
-1. Extract EVERY single row printed. DO NOT skip or truncate data.
-2. Read the running balance directly from the right-hand side column of each row EXACTLY as printed. DO NOT calculate balances.
-3. Hard-enforcement for outbounds/debits: If an amount represents a withdrawal, charge, or negative value (indicated by parentheses like "(42,148.24)" or minus sign "-42,148.24"), you MUST output it with an explicit minus sign prefixed to the string, like "-$42,148.24".
+1. Extract EVERY single transaction row printed. DO NOT truncate, skip, or summarize.
+2. Every transaction MUST include a "balance" field.
+3. Read the running balance directly from the right-hand side column of each row EXACTLY as printed. DO NOT recalculate or guess balances.
+4. If an amount represents a withdrawal, debit, charge, fee, or negative value, explicitly output it with a minus sign prefixed to the string, like "-$1,476.44" or "-$438,176.22".
 
-RETURN SCHEMA:
+THE SCHEMA:
 {
   "transactions": [
     {
       "id": 1,
       "date": "Date",
       "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
-      "description": "Full row details",
-      "amount": "-$42,148.24",
-      "balance": "$157,100.00"
+      "description": "Full description particulars",
+      "amount": "-$438,176.22",
+      "balance": "$60,351,658.28"
     }
   ]
-}`;
+}
 
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [
-            { text: prompt },
-            { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
-          ],
-          config: { responseMimeType: 'application/json', temperature: 0.0 }
-        });
+OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
 
-        const chunkText = response.text || '{}';
-        const chunkData = cleanAndParseJSON(chunkText);
-        const txs = chunkData.transactions || chunkData.rows || chunkData || [];
-        
-        if (Array.isArray(txs)) {
-          masterTransactions = masterTransactions.concat(txs);
-        }
-      } catch (err) {
-        console.warn(`⚠️ Batch segment failed, bypassing window parameters:`, err);
-      }
-    }
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        { text: prompt },
+        { inlineData: { data: base64Data, mimeType: mimeType } },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 16384,
+        temperature: 0.0,
+      },
+    });
 
-    const finalizedRows = masterTransactions.map((tx, index) => ({
-      ...tx,
-      id: index + 1
-    }));
+    const responseText = response.text || '{}';
+    const parsedData = cleanAndParseJSON(responseText);
+    const transactions = parsedData.transactions || parsedData.rows || parsedData || [];
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Gemini 2.5 Batch Stream',
-      total_transactions: finalizedRows.length,
-      page_count: totalPages,
-      rows: finalizedRows,
+      engine_used: 'SwiftLedger Single-Pass Core',
+      total_transactions: transactions.length,
+      page_count: pageCount,
+      rows: transactions,
     });
   } catch (error: any) {
+    console.error('Parsing System Failure:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }
