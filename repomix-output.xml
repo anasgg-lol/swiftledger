@@ -60,6 +60,11 @@ src/
       page.tsx
     lib/
       supabaseClient.ts
+    payment/
+      cancel/
+        page.tsx
+      success/
+        page.tsx
     pricing/
       page.tsx
     privacy/
@@ -89,6 +94,109 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
+<file path="src/app/payment/cancel/page.tsx">
+'use client';
+
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+
+export default function PaymentCancel() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      router.push('/');
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [router]);
+
+  return (
+    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+          <svg className="w-10 h-10 text-amber-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h1 className="text-3xl font-bold text-white">Payment Cancelled</h1>
+        <p className="text-slate-400 mt-3">Your payment was cancelled. No charges were made.</p>
+        <Link
+          href="/"
+          className="inline-block mt-6 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-medium rounded-xl text-sm transition-colors"
+        >
+          ← Back to SwiftLedger
+        </Link>
+        <p className="text-xs text-slate-500 mt-4">Redirecting in 5 seconds...</p>
+      </div>
+    </main>
+  );
+}
+</file>
+
+<file path="src/app/payment/success/page.tsx">
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+export default function PaymentSuccess() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [countdown, setCountdown] = useState(5);
+
+  const pageCount = searchParams.get('pageCount');
+  const txCount = searchParams.get('txCount');
+  const file = searchParams.get('file');
+
+  // Auto-redirect to home after 5 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          router.push('/');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [router]);
+
+  return (
+    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+          <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h1 className="text-3xl font-bold text-white">✅ Payment Successful!</h1>
+        <p className="text-slate-400 mt-3">
+          Your payment was successful. You can now download your CSV.
+        </p>
+        <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+          <p className="text-emerald-400 font-medium">
+            📄 {file || 'Your statement'} – {txCount || 0} transactions
+          </p>
+        </div>
+        <Link
+          href="/"
+          className="inline-block mt-6 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-medium rounded-xl text-sm transition-colors"
+        >
+          ← Back to SwiftLedger
+        </Link>
+        <p className="text-xs text-slate-500 mt-4">Redirecting in {countdown}s</p>
+      </div>
+    </main>
+  );
+}
+</file>
+
 <file path="public/file.svg">
 <svg fill="none" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 13.5V5.41a1 1 0 0 0-.3-.7L9.8.29A1 1 0 0 0 9.08 0H1.5v13.5A2.5 2.5 0 0 0 4 16h8a2.5 2.5 0 0 0 2.5-2.5m-1.5 0v-7H8v-5H3v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1M9.5 5V2.12L12.38 5zM5.13 5h-.62v1.25h2.12V5zm-.62 3h7.12v1.25H4.5zm.62 3h-.62v1.25h7.12V11z" clip-rule="evenodd" fill="#666" fill-rule="evenodd"/></svg>
 </file>
@@ -112,21 +220,70 @@ This section contains the contents of the repository's files.
 <file path="src/app/api/create-checkout/route.ts">
 import { NextResponse } from 'next/server';
 
+const WHOP_API_URL = 'https://api.whop.com/v2';
+
 export async function POST(req: Request) {
   try {
     const { price, pageCount, transactionCount, fileName } = await req.json();
-    
-    // In production: use Lemon Squeezy API to create a checkout
-    // For now, return a dummy success response with a redirect URL
-    // Later, you'll replace this with actual Lemon Squeezy SDK call
 
-    // Example dummy response:
+    // Map price to product ID
+    const productMap: Record<string, string> = {
+      '5': process.env.WHOP_PRODUCT_ID_STARTER || '',
+      '25': process.env.WHOP_PRODUCT_ID_BUSINESS || '',
+      '45': process.env.WHOP_PRODUCT_ID_CORPORATE || '',
+      '85': process.env.WHOP_PRODUCT_ID_ENTERPRISE || '',
+    };
+
+    const productId = productMap[price.toString()];
+
+    if (!productId) {
+      console.error('❌ No product ID found for price:', price);
+      return NextResponse.json(
+        { error: 'Invalid price tier' },
+        { status: 400 }
+      );
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+    // Create Whop checkout link
+    const response = await fetch(`${WHOP_API_URL}/products/${productId}/checkout-links`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.WHOP_API_KEY}`,
+      },
+      body: JSON.stringify({
+        metadata: {
+          page_count: pageCount,
+          transaction_count: transactionCount,
+          file_name: fileName,
+        },
+        success_url: `${appUrl}/payment/success?pageCount=${pageCount}&txCount=${transactionCount}&file=${encodeURIComponent(fileName)}`,
+        cancel_url: `${appUrl}/payment/cancel`,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Whop API error:', data);
+      return NextResponse.json(
+        { error: data?.error?.message || 'Failed to create checkout' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
-      checkoutUrl: `https://ledgerflow.com/checkout?price=${price}&pages=${pageCount}`,
+      checkoutUrl: data.data.url,
       success: true,
     });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create checkout' }, { status: 500 });
+    console.error('❌ Checkout error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to create checkout' },
+      { status: 500 }
+    );
   }
 }
 </file>
@@ -411,14 +568,14 @@ export default function Footer() {
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xl font-bold text-white tracking-tight">
-                Ledger<span className="text-emerald-400">Flow</span>
+                Swift<span className="text-emerald-400">Ledger</span>
               </span>
             </div>
             <p className="text-slate-400 text-sm max-w-xs leading-relaxed">
               Bank statement parsing, automated. Built for accountants, freelancers, and finance professionals.
             </p>
             <div className="flex items-center gap-4 mt-4">
-              <span className="text-[10px] text-slate-500">© {new Date().getFullYear()} LedgerFlow</span>
+              <span className="text-[10px] text-slate-500">© {new Date().getFullYear()} SwiftLedger</span>
               <span className="text-slate-700">|</span>
               <span className="text-[10px] text-slate-500">Privacy First</span>
               <span className="text-slate-700">|</span>
@@ -511,8 +668,6 @@ export default function FeaturesPage() {
 
   return (
     <main className="min-h-screen bg-[#030712] text-white flex flex-col">
-      
-      {/* ===== HERO ===== */}
       <section className="pt-24 pb-16 px-6 text-center border-b border-slate-800/50">
         <div className="max-w-4xl mx-auto animate-fade-up">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium uppercase tracking-wider mb-4">
@@ -525,7 +680,7 @@ export default function FeaturesPage() {
             <span className="text-emerald-400">Automate Statement Parsing</span>
           </h1>
           <p className="text-slate-400 text-lg max-w-2xl mx-auto mt-4">
-            LedgerFlow turns messy bank statements into clean, actionable data. Built for accountants, freelancers, and finance teams.
+            SwiftLedger turns messy bank statements into clean, actionable data. Built for accountants, freelancers, and finance teams.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link href="/" className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold rounded-xl text-sm shadow-[0_0_30px_rgba(16,185,129,0.15)] hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] transition-all duration-300">
@@ -538,7 +693,6 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      {/* ===== FEATURES GRID ===== */}
       <section className="py-16 px-6 flex-1">
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -546,7 +700,6 @@ export default function FeaturesPage() {
               <div
                 key={index}
                 className="bg-slate-900/60 border border-slate-800/60 rounded-2xl p-6 hover:border-emerald-500/30 hover:bg-slate-900/80 transition-all duration-300 hover:translate-y-[-2px]"
-                style={{ animationDelay: `${index * 0.05}s` }}
               >
                 <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
                   {feature.icon}
@@ -559,7 +712,6 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      {/* ===== CTA ===== */}
       <section className="py-16 px-6 border-t border-slate-800/50">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-white mb-4">
@@ -607,8 +759,6 @@ export default function PricingPage() {
 
   return (
     <main className="min-h-screen bg-[#030712] text-white flex flex-col">
-      
-      {/* ===== HERO ===== */}
       <section className="pt-24 pb-12 px-6 text-center border-b border-slate-800/50">
         <div className="max-w-4xl mx-auto animate-fade-up">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium uppercase tracking-wider mb-4">
@@ -626,7 +776,6 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* ===== PRICING CARDS ===== */}
       <section className="py-16 px-6 flex-1">
         <div className="max-w-4xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -634,7 +783,6 @@ export default function PricingPage() {
               <div
                 key={i}
                 className="bg-slate-900/60 border border-slate-800/60 rounded-2xl p-6 text-center hover:border-emerald-500/30 hover:bg-slate-900/80 transition-all duration-300 hover:translate-y-[-2px]"
-                style={{ animationDelay: `${i * 0.05}s` }}
               >
                 <div className="text-3xl mb-2">{tier.badge}</div>
                 <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">{tier.range}</p>
@@ -645,7 +793,6 @@ export default function PricingPage() {
             ))}
           </div>
 
-          {/* ===== BOTTOM CTA ===== */}
           <div className="mt-12 text-center">
             <p className="text-xs text-slate-500 max-w-xl mx-auto">
               No free pages. No hidden fees. Start with a free preview, then pay only when you export.
@@ -913,11 +1060,13 @@ body {
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }
 
+/* ===== SCROLLBAR ===== */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 10px; }
 ::-webkit-scrollbar-thumb { background: rgba(16,185,129,0.3); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,0.5); }
 
+/* ===== ANIMATIONS ===== */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
@@ -932,6 +1081,7 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 .animate-spin-slow { animation: spin 1.5s linear infinite; }
 
+/* ===== DROPDOWNS ===== */
 select {
   background-color: #0f172a !important;
   color: #ffffff !important;
@@ -948,6 +1098,7 @@ select {
 select option { background-color: #0f172a !important; color: #ffffff !important; }
 select:focus { outline: none !important; border-color: rgba(16, 185, 129, 0.3) !important; }
 
+/* ===== ORBS ===== */
 .orb {
   position: fixed;
   border-radius: 50%;
@@ -988,19 +1139,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LedgerFlow – Bank Statements to CSV, Simplified",
+  title: "SwiftLedger – Bank Statements to CSV, Lightning Fast",
   description: "Convert bank statements to CSV instantly with AI-powered OCR. Built for accountants, freelancers, and finance teams.",
-  keywords: "bank statement parser, PDF to CSV, financial automation, OCR extraction, accounting tool, statement converter",
+  keywords: "bank statement parser, PDF to CSV, financial automation, OCR extraction, accounting tool, SwiftLedger",
   openGraph: {
-    title: "LedgerFlow – Bank Statements to CSV",
+    title: "SwiftLedger – Bank Statements to CSV",
     description: "Upload any bank statement. Get a clean CSV in seconds.",
-    url: "https://ledgerflow.com",
-    siteName: "LedgerFlow",
+    url: "https://swiftledger.com",
+    siteName: "SwiftLedger",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "LedgerFlow – Bank Statements to CSV",
+    title: "SwiftLedger – Bank Statements to CSV",
     description: "Upload any bank statement. Get a clean CSV in seconds.",
   },
 };
@@ -1013,7 +1164,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2 group">
               <span className="text-xl font-bold text-white tracking-tight">
-                Ledger<span className="text-emerald-400 group-hover:text-emerald-300 transition-colors">Flow</span>
+                Swift<span className="text-emerald-400 group-hover:text-emerald-300 transition-colors">Ledger</span>
               </span>
             </Link>
             <div className="flex items-center gap-7 text-sm">
@@ -1051,15 +1202,7 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
   { id: 4, date: '4th November 2026', type: 'Bank Credit', description: 'Transfer for Shared Expenses', amount: '£12.50', balance: '£411.00' },
   { id: 5, date: '4th November 2026', type: 'Card Payment', description: 'EV Charging Station', amount: '-£10.00', balance: '£401.00' },
   { id: 6, date: '5th November 2026', type: 'Direct Debit', description: 'Fitness Club Membership', amount: '-£32.50', balance: '£368.50' },
-  // Adding more for demo to show last 3 rows
-  { id: 7, date: '6th November 2026', type: 'Card Payment', description: 'Supermarket', amount: '-£45.00', balance: '£323.50' },
-  { id: 8, date: '7th November 2026', type: 'Bank Credit', description: 'Freelance Payment', amount: '£200.00', balance: '£523.50' },
-  { id: 9, date: '8th November 2026', type: 'Direct Debit', description: 'Phone Bill', amount: '-£35.00', balance: '£488.50' },
 ];
-
-// ============================================================
-// 🔥 EXPORT GENERATORS
-// ============================================================
 
 function parseCurrency(value: string): number {
   if (!value) return 0;
@@ -1074,6 +1217,33 @@ function getSignedAmount(row: Transaction): number {
     return -raw;
   }
   return raw;
+}
+
+function generateCSV(rows: Transaction[]): string {
+  if (!rows.length) return '';
+  const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
+  const csvRows = rows.map((r) => [
+    r.id.toString(),
+    r.date,
+    r.type,
+    r.description,
+    r.amount,
+    r.balance,
+  ]);
+  return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
+}
+
+function generateXeroCSV(rows: Transaction[], bank: string = ''): string {
+  if (!rows.length) return '';
+  const headers = ['Date', 'Description', 'Amount', 'Balance', 'Bank'];
+  const csvRows = rows.map((r) => [
+    r.date,
+    `${r.description} (${r.type})`,
+    getSignedAmount(r).toFixed(2),
+    parseCurrency(r.balance).toFixed(2),
+    bank || 'General',
+  ]);
+  return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
 }
 
 function generateOFX(rows: Transaction[], bank: string = ''): string {
@@ -1115,7 +1285,6 @@ NEWFILEUID:NONE
 <DTSTART>${new Date(rows[0]?.date || Date.now()).toISOString().split('T')[0]}
 <DTEND>${new Date(rows[rows.length - 1]?.date || Date.now()).toISOString().split('T')[0]}
 `;
-
   let ofxBody = '';
   rows.forEach((r, i) => {
     const amount = getSignedAmount(r);
@@ -1134,7 +1303,6 @@ NEWFILEUID:NONE
 <NAME>${r.description.substring(0, 60)}
 </STMTTRN>`;
   });
-
   const ofxFooter = `
 </BANKTRANLIST>
 <LEDGERBAL>
@@ -1162,33 +1330,6 @@ Dated\tDescription\tWithdrawal\tDeposit\tBalance
     qbo += `${dateStr}\t${r.description}\t${isCredit ? '' : amtStr}\t${isCredit ? amtStr : ''}\t${parseCurrency(r.balance).toFixed(2)}\n`;
   });
   return qbo;
-}
-
-function generateCSV(rows: Transaction[]): string {
-  if (!rows.length) return '';
-  const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
-  const csvRows = rows.map((r) => [
-    r.id.toString(),
-    r.date,
-    r.type,
-    r.description,
-    r.amount,
-    r.balance,
-  ]);
-  return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
-}
-
-function generateXeroCSV(rows: Transaction[], bank: string = ''): string {
-  if (!rows.length) return '';
-  const headers = ['Date', 'Description', 'Amount', 'Balance', 'Bank'];
-  const csvRows = rows.map((r) => [
-    r.date,
-    `${r.description} (${r.type})`,
-    getSignedAmount(r).toFixed(2),
-    parseCurrency(r.balance).toFixed(2),
-    bank || 'General',
-  ]);
-  return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
 }
 
 function downloadFile(content: string, filename: string, mimeType: string) {
@@ -1245,8 +1386,6 @@ export default function Home() {
   const [selectedBank, setSelectedBank] = useState<string>('');
   const [stats, setStats] = useState<any>(null);
   const [progressMessage, setProgressMessage] = useState<string>('Analyzing your statement...');
-  const [progressIndex, setProgressIndex] = useState<number>(0);
-
   const [selectedFormats, setSelectedFormats] = useState<Record<string, boolean>>({
     csv: true,
     xero: true,
@@ -1257,7 +1396,6 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 🔥 HYPE LOADING MESSAGES
   const progressMessages = [
     { time: 0, msg: '🔍 Scanning your statement...' },
     { time: 2, msg: '🧠 AI is extracting transactions...' },
@@ -1283,7 +1421,6 @@ export default function Home() {
     setParsedData([]);
     setShowStats(false);
     setLoadingTime(0);
-    setProgressIndex(0);
     setProgressMessage('🔍 Scanning your statement...');
 
     if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
@@ -1387,24 +1524,42 @@ export default function Home() {
       totalDebits,
       netBalance: totalCredits - totalDebits,
       firstDate: '1st November 2026',
-      lastDate: '8th November 2026',
+      lastDate: '5th November 2026',
     });
     setShowStats(true);
   };
 
   const handlePayAndDownload = async () => {
     if (!stats) return;
-    const confirmed = window.confirm(`💳 Pay $${stats.price} for ${stats.pageCount} pages?`);
-    if (confirmed) {
-      const formats = Object.keys(selectedFormats).filter((key) => selectedFormats[key]);
-      if (formats.length === 0) {
-        alert('Please select at least one format to export.');
-        return;
+
+    const formats = Object.keys(selectedFormats).filter((key) => selectedFormats[key]);
+    if (formats.length === 0) {
+      alert('Please select at least one format to export.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          price: stats.price,
+          pageCount: stats.pageCount,
+          transactionCount: stats.transactionCount,
+          fileName: fileName || 'statement',
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        alert('Something went wrong. Please try again.');
       }
-      downloadAllFormats(parsedData, fileName || 'statement', formats, selectedBank);
-      setShowStats(false);
-      setParsedData([]);
-      setFileName('');
+    } catch (error) {
+      console.error('Checkout error:', error);
+      alert('Failed to create checkout. Please try again.');
     }
   };
 
@@ -1419,91 +1574,22 @@ export default function Home() {
     return Object.values(selectedFormats).filter(Boolean).length;
   };
 
-  // ============================================================
-  // 🔥 RENDER PREVIEW TABLE (First 5 + Last 3 rows clear)
-  // ============================================================
-  const renderPreviewTable = () => {
-    if (!parsedData.length) return null;
-
-    const firstRows = parsedData.slice(0, 5);
-    const lastRows = parsedData.slice(-3);
-    const middleRows = parsedData.slice(5, -3);
-
-    return (
-      <div className="relative rounded-xl border border-slate-800 overflow-hidden">
-        <table className="w-full text-left text-[10px]">
-          <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
-            <tr>
-              <th className="p-2.5 font-medium">Date</th>
-              <th className="p-2.5 font-medium">Type</th>
-              <th className="p-2.5 font-medium">Description</th>
-              <th className="p-2.5 text-right font-medium">Amount</th>
-              <th className="p-2.5 text-right font-medium">Balance</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {/* First 5 rows - CLEAR */}
-            {firstRows.map((row) => (
-              <tr key={row.id} className="hover:bg-slate-800/30 transition-colors">
-                <td className="p-2.5 font-medium text-white/90">{row.date}</td>
-                <td className="p-2.5 text-slate-400/70">{row.type}</td>
-                <td className="p-2.5 text-slate-300/80">{row.description}</td>
-                <td className={`p-2.5 text-right font-bold ${row.amount.startsWith('-') ? 'text-rose-400/80' : 'text-emerald-400/80'}`}>{row.amount}</td>
-                <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
-              </tr>
-            ))}
-
-            {/* Middle rows - BLURRED */}
-            {middleRows.map((row) => (
-              <tr key={row.id} className="select-none blur-[3px] opacity-25 pointer-events-none">
-                <td className="p-2.5 font-medium text-white/60">{row.date}</td>
-                <td className="p-2.5 text-slate-400/40">{row.type}</td>
-                <td className="p-2.5 text-slate-300/50">{row.description}</td>
-                <td className="p-2.5 text-right font-bold text-emerald-400/50">{row.amount}</td>
-                <td className="p-2.5 text-right text-slate-400/40">{row.balance}</td>
-              </tr>
-            ))}
-
-            {/* Last 3 rows - CLEAR */}
-            {lastRows.map((row) => (
-              <tr key={row.id} className="hover:bg-slate-800/30 transition-colors border-t border-emerald-500/20">
-                <td className="p-2.5 font-medium text-white/90">{row.date}</td>
-                <td className="p-2.5 text-slate-400/70">{row.type}</td>
-                <td className="p-2.5 text-slate-300/80">{row.description}</td>
-                <td className={`p-2.5 text-right font-bold ${row.amount.startsWith('-') ? 'text-rose-400/80' : 'text-emerald-400/80'}`}>{row.amount}</td>
-                <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {/* Overlay */}
-        <div className="absolute inset-x-0 bottom-0 top-1/3 bg-gradient-to-t from-[#030712] via-[#030712]/90 to-transparent flex items-center justify-center pb-3 pointer-events-none">
-          <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
-            <svg className="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0110 0v4" /></svg>
-            {parsedData.length - 8} transactions hidden • Unlock to see all
-          </p>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-start p-6 relative font-sans overflow-x-hidden">
       
       <div className="orb orb-1" />
       <div className="orb orb-2" />
 
-      {/* ===== HERO ===== */}
       <div className="text-center max-w-4xl mx-auto z-10 mt-10 animate-fade-up">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium uppercase tracking-wider mb-4">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
           99% Accuracy • Bank Statement Parser
         </div>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.1]">
-          <span className="text-white">Bank Statements to</span>
+          <span className="text-white">Swift</span>
+          <span className="text-emerald-400">Ledger</span>
           <br />
-          <span className="text-emerald-400">CSV in Seconds</span>
+          <span className="text-slate-300 text-3xl md:text-4xl font-light mt-2 block">Bank Statements to CSV in Seconds</span>
         </h1>
         <p className="text-slate-400 text-lg max-w-2xl mx-auto mt-4 flex flex-wrap items-center justify-center gap-2">
           <span className="text-emerald-400 font-medium">Better & faster than Adobe</span>
@@ -1514,7 +1600,6 @@ export default function Home() {
         </p>
       </div>
 
-      {/* ===== COMPETITOR BADGE ===== */}
       <div className="w-full max-w-2xl mx-auto z-10 mt-6 animate-fade-up-delay-1">
         <div className="bg-slate-900/60 border border-slate-800/50 rounded-2xl p-3.5 flex flex-wrap items-center justify-center gap-3 md:gap-5">
           {[
@@ -1531,7 +1616,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ===== TRUST BAR ===== */}
       <div className="w-full max-w-4xl mx-auto z-10 mt-8 animate-fade-up-delay-2">
         <p className="text-center text-[9px] text-slate-500 uppercase tracking-[0.2em] mb-4">Trusted by finance teams at</p>
         <div className="flex flex-wrap items-center justify-center gap-8 md:gap-10">
@@ -1541,7 +1625,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ===== UPLOAD ZONE ===== */}
       <div className="w-full max-w-xl mx-auto z-10 mt-8 animate-fade-up-delay-3">
         <div
           onClick={() => fileInputRef.current?.click()}
@@ -1585,7 +1668,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ===== LOADING WITH HYPE MESSAGES ===== */}
       {loading && (
         <div className="w-full max-w-2xl mx-auto z-10 mt-6 animate-fade-up">
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
@@ -1612,7 +1694,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ===== STATS CARD + MULTI-FORMAT ===== */}
       {showStats && stats && parsedData.length > 0 && !loading && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-6 animate-fade-up-delay-1">
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
@@ -1700,7 +1781,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ===== PREVIEW TABLE (First 5 + Last 3 clear) ===== */}
       {parsedData.length > 0 && !loading && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-4 animate-fade-up-delay-2">
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
@@ -1709,11 +1789,47 @@ export default function Home() {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 {fileName || 'statement'} – {parsedData.length} rows
               </span>
-              <span className="text-[10px] text-slate-500 font-medium">
-                First 5 + Last 3 rows shown • {parsedData.length - 8} hidden
-              </span>
+              <span className="text-[10px] text-slate-500 font-medium">Preview (5 rows)</span>
             </div>
-            {renderPreviewTable()}
+            <div className="relative rounded-xl border border-slate-800 overflow-hidden">
+              <table className="w-full text-left text-[10px]">
+                <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th className="p-2.5 font-medium">Date</th>
+                    <th className="p-2.5 font-medium">Type</th>
+                    <th className="p-2.5 font-medium">Description</th>
+                    <th className="p-2.5 text-right font-medium">Amount</th>
+                    <th className="p-2.5 text-right font-medium">Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/50">
+                  {parsedData.slice(0, 5).map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="p-2.5 font-medium text-white/90">{row.date}</td>
+                      <td className="p-2.5 text-slate-400/70">{row.type}</td>
+                      <td className="p-2.5 text-slate-300/80">{row.description}</td>
+                      <td className={`p-2.5 text-right font-bold ${row.amount.startsWith('-') ? 'text-rose-400/80' : 'text-emerald-400/80'}`}>{row.amount}</td>
+                      <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
+                    </tr>
+                  ))}
+                  {parsedData.slice(5).map((row) => (
+                    <tr key={row.id} className="select-none blur-[3px] opacity-25 pointer-events-none">
+                      <td className="p-2.5 font-medium text-white/60">{row.date}</td>
+                      <td className="p-2.5 text-slate-400/40">{row.type}</td>
+                      <td className="p-2.5 text-slate-300/50">{row.description}</td>
+                      <td className="p-2.5 text-right font-bold text-emerald-400/50">{row.amount}</td>
+                      <td className="p-2.5 text-right text-slate-400/40">{row.balance}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="absolute inset-x-0 bottom-0 top-1/3 bg-gradient-to-t from-[#030712] via-[#030712]/90 to-transparent flex items-center justify-center pb-3">
+                <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
+                  <svg className="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0110 0v4" /></svg>
+                  Unlock all {parsedData.length} transactions
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1829,23 +1945,16 @@ export default nextConfig;
     "lint": "eslint"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1111.0",
-    "@aws-sdk/s3-request-presigner": "^3.1111.0",
     "@google/genai": "^2.17.1",
     "@supabase/supabase-js": "^2.112.3",
-    "@upstash/ratelimit": "^2.0.8",
-    "@upstash/redis": "^1.38.2",
     "formidable": "^3.5.4",
-    "groq-sdk": "^1.5.0",
     "next": "16.3.1",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
-    "pdf2json": "^4.0.3",
     "pdfjs-dist": "^6.2.108",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "sharp": "^0.35.3",
-    "xlsx": "^0.18.5"
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

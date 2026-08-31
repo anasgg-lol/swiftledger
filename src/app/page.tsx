@@ -346,6 +346,9 @@ export default function Home() {
     setShowStats(true);
   };
 
+  // ============================================================
+  // 🔥 UPDATED: WHOP CHECKOUT
+  // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
 
@@ -354,6 +357,8 @@ export default function Home() {
       alert('Please select at least one format to export.');
       return;
     }
+
+    setLoading(true);
 
     try {
       const res = await fetch('/api/create-checkout', {
@@ -369,14 +374,22 @@ export default function Home() {
 
       const data = await res.json();
 
-      if (data.success && data.checkoutUrl) {
+      if (!data.success) {
+        alert(data.error || 'Something went wrong. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      if (data.checkoutUrl) {
         window.location.href = data.checkoutUrl;
       } else {
-        alert('Something went wrong. Please try again.');
+        alert('No checkout URL returned. Please try again.');
+        setLoading(false);
       }
     } catch (error) {
       console.error('Checkout error:', error);
       alert('Failed to create checkout. Please try again.');
+      setLoading(false);
     }
   };
 
