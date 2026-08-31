@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-// 🔥 CORRECT WHOP API ENDPOINT
+// 🔥 THIS IS THE CORRECT WHOP API ENDPOINT
 const WHOP_API_URL = 'https://api.whop.com/v1';
 
 export async function POST(req: Request) {
@@ -29,8 +29,8 @@ export async function POST(req: Request) {
 
     console.log('🔍 Creating Whop checkout with product ID:', productId);
 
-    // 🔥 CORRECT ENDPOINT: /v1/checkout-links
-    const response = await fetch(`${WHOP_API_URL}/checkout-links`, {
+    // 🔥 THIS IS THE API CALL – IT USES /v1/checkouts
+    const response = await fetch(`${WHOP_API_URL}/checkouts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -61,7 +61,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // 🔥 The checkout URL is in data.data.url
     const checkoutUrl = data?.data?.url;
 
     if (!checkoutUrl) {
