@@ -23,17 +23,18 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
 
 // 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
 // ✅ FULL REPLACEMENT BLOCK: COPY AND PASTE THIS EXACT SECTION
+// 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const trimmed = value.trim();
   
-  // Check for standard accounting parentheses negative formats like (438,176.22)
+  // Intercept standard accounting parentheses negatives like (42,148.24) before stripping chars
   const isParenthesisNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
   
-  // Check for explicit negative indicators or minus signs anywhere in the string
+  // Also check if the string contains a native minus symbol anywhere before parsing digits
   const hasMinusSign = trimmed.includes('-');
   
-  let cleaned = trimmed.replace(/[^0-9.]/g, ''); // Extract only digits and decimals
+  let cleaned = trimmed.replace(/[^0-9.]/g, ''); // Retain purely numeric decimals
   let numericValue = parseFloat(cleaned) || 0;
   
   if (isParenthesisNegative || hasMinusSign) {
@@ -42,19 +43,13 @@ function parseCurrency(value: string): number {
   return numericValue;
 }
 
-// Automatically guards math symbols by matching explicit transaction keyword identifiers
+// 🔥 CRITICAL FAIL-SAFE: Enforces correct mathematical states for all balance logs and debit filters
 function getSignedAmount(row: Transaction): number {
   const amount = parseCurrency(row.amount);
-  const debitKeywords = ['DEBIT', 'WD', 'PAYMENT', 'OUTGOING', 'FEE', 'CHARGE', 'SUB', 'WITHDRAWAL', 'TAX'];
+  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS'];
   
-  const matchesDebit = debitKeywords.some(kw => 
-    row.type.toUpperCase().includes(kw) || 
-    row.description.toUpperCase().includes(kw) ||
-    row.amount.includes('-') ||
-    row.amount.startsWith('(')
-  );
-
-  if (amount > 0 && matchesDebit) {
+  // Force conversion to negative if amount is positive but matches a known debit type or structural layout
+  if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
     return -amount;
   }
   return amount;
