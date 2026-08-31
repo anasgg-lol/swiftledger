@@ -4,7 +4,7 @@ import { PDFDocument } from 'pdf-lib';
 
 export const config = {
   api: {
-    bodyParser: false, // Prevents Vercel from pre-consuming the request stream
+    bodyParser: false, 
   },
 };
 
@@ -30,7 +30,6 @@ function cleanAndParseJSON(rawResponse: string): any {
   }
 }
 
-// 🔥 CRITICAL FIX: Safe deep binary copy that prevents memory drops on Vercel Edge networks
 async function extractPageRange(srcDoc: PDFDocument, start: number, end: number): Promise<string> {
   const newDoc = await PDFDocument.create();
   const rangeIndices = Array.from({ length: end - start + 1 }, (_, i) => start + i);
@@ -38,7 +37,6 @@ async function extractPageRange(srcDoc: PDFDocument, start: number, end: number)
   copiedPages.forEach(page => newDoc.addPage(page));
   
   const pdfBytes = await newDoc.save();
-  // Forcing explicit array memory copy prevents Vercel's Node buffer layers from crashing in 3s
   const uint8Array = new Uint8Array(pdfBytes);
   return Buffer.from(uint8Array.buffer, uint8Array.byteOffset, uint8Array.byteLength).toString('base64');
 }
@@ -62,26 +60,26 @@ export async function POST(req: Request) {
     const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
     
-    // Processing pages one-by-one balances accuracy, maximizes memory limits, and prevents truncation
-    const chunkSize = 1; 
+    // Balanced batch grouping window to process large files quickly under the 10s ceiling
+    const chunkSize = 20; 
     let masterTransactions: any[] = [];
 
     const ai = new GoogleGenAI({ apiKey });
 
-    console.log(`🚀 INITIALIZING SWIFTLEDGER STREAM PARSER: ${totalPages} TOTAL PAGES`);
+    console.log(`🚀 INITIALIZING SWIFTLEDGER OPTIMIZED BATCH PARSER: ${totalPages} TOTAL PAGES`);
 
     for (let i = 0; i < totalPages; i += chunkSize) {
       const startPage = i;
       const endPage = Math.min(i + chunkSize - 1, totalPages - 1);
       
-      console.log(`📦 Sequential parsing step: Page ${startPage + 1} of ${totalPages}`);
+      console.log(`📦 Parsing batch segment: Pages ${startPage + 1} to ${endPage + 1}`);
       const chunkBase64 = await extractPageRange(srcDoc, startPage, endPage);
 
-      const prompt = `You are an institutional financial document parser. Extract ALL transaction rows from this bank statement page.
-      
-CRITICAL ACCURACY RULES:
-1. Extract EVERY single row printed on this page. DO NOT skip any data rows.
-2. Read the running balance directly from the right-hand side of each transaction row exactly as printed. DO NOT recalculate or guess balances.
+      const prompt = `You are a financial document parser. Extract ALL transaction rows from this bank statement chunk.
+
+CRITICAL RULES:
+1. Extract EVERY single transaction row printed. DO NOT skip any data rows.
+2. Read the running balance directly from the right-hand side of each transaction row exactly as printed. DO NOT calculate balances.
 3. Map financials carefully: if an amount has a minus sign, negative indicator, or parentheses like "(42,148.24)", prefix it explicitly with a minus sign like "-$42,148.24".
 
 RETURN SCHEMA:
@@ -119,7 +117,7 @@ RETURN SCHEMA:
           masterTransactions = masterTransactions.concat(txs);
         }
       } catch (err) {
-        console.warn(`⚠️ Safe Bypass: Page block ${startPage + 1} failed, advancing parser loop:`, err);
+        console.warn(`⚠️ Batch bypass: Segment ${startPage + 1} failed, skipping...`, err);
       }
     }
 
@@ -128,22 +126,21 @@ RETURN SCHEMA:
       id: index + 1
     }));
 
-    console.log(`✅ PARSER MATRIX SUCCESS: Extracted ${finalizedRows.length} total rows across ${totalPages} pages.`);
+    console.log(`✅ PARSER SUCCESS: Extracted ${finalizedRows.length} total rows across ${totalPages} pages.`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Gemini 2.5 Multi-Chunk Stream',
+      engine_used: 'SwiftLedger Gemini 2.5 Batch Stream',
       total_transactions: finalizedRows.length,
       page_count: totalPages,
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('Parsing System Crash Intercepted:', error);
+    console.error('System exception caught:', error);
     return NextResponse.json({ 
       success: false, 
-      error: error?.message || 'Parsing failed',
-      details: String(error)
+      error: error?.message || 'Parsing failed'
     }, { status: 500 });
   }
 }
