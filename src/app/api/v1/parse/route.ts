@@ -29,11 +29,10 @@ function cleanAndParseJSON(rawResponse: string): any {
 }
 
 // ============================================================
-// 🔥 FIXED: pdf-parse with proper type handling
+// 🔥 pdf-parse with proper type handling
 // ============================================================
 async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
   try {
-    // Using require instead of import to avoid TypeScript issues
     // @ts-ignore
     const pdfParse = require('pdf-parse');
     const data = await pdfParse(buffer);
@@ -45,17 +44,15 @@ async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
 }
 
 // ============================================================
-// 🔥 FIXED: pdfjs-dist with proper import
+// 🔥 pdfjs-dist with proper import
 // ============================================================
 async function getPageCountPdfJs(buffer: Buffer): Promise<number | null> {
   try {
-    // Try legacy build first
     try {
       const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
       const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
       return pdf.numPages;
     } catch {
-      // Fallback to regular import
       const pdfjsLib = await import('pdfjs-dist');
       const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
       return pdf.numPages;
@@ -108,21 +105,18 @@ async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
 // 🔥 MASTER PAGE COUNT FUNCTION
 // ============================================================
 async function getPDFPageCount(buffer: Buffer): Promise<number> {
-  // Try pdf-parse first (fastest)
   const count1 = await getPageCountPdfParse(buffer);
   if (count1 !== null && count1 > 0) {
     console.log(`📄 pdf-parse: ${count1} pages`);
     return count1;
   }
 
-  // Fallback to pdfjs-dist
   const count2 = await getPageCountPdfJs(buffer);
   if (count2 !== null && count2 > 0) {
     console.log(`📄 pdfjs-dist: ${count2} pages`);
     return count2;
   }
 
-  // Final fallback: Gemini Vision (SLOW - only for scanned PDFs)
   console.log('⚠️ pdf-parse and pdfjs-dist failed. Using Gemini Vision fallback.');
   const count3 = await getPageCountGeminiVision(buffer);
   console.log(`📄 Gemini Vision: ${count3} pages`);
@@ -161,7 +155,7 @@ async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
 }
 
 // ============================================================
-// 🔥 POST HANDLER
+// 🔥 POST HANDLER – ULTRA RELIABLE
 // ============================================================
 export async function POST(req: Request) {
   try {
@@ -216,19 +210,40 @@ export async function POST(req: Request) {
     const base64Data = processedBuffer.toString('base64');
     const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `Extract ALL financial transactions from this document into a JSON object matching this exact schema:
+    // ============================================================
+    // 🔥 IMPROVED PROMPT – FORCES BALANCE EXTRACTION
+    // ============================================================
+    const prompt = `You are a financial document parser. Extract ALL transactions from this bank statement.
+
+CRITICAL RULES:
+1. EVERY transaction MUST include a "balance" field.
+2. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
+3. Look for a column labeled "Balance", "Running Balance", "Account Balance", or "Closing Balance".
+4. If you see a statement summary at the top with "Opening Balance" and "Closing Balance", use those.
+5. The balance must include the currency symbol ($, £, €, etc.).
+6. DO NOT calculate the balance. USE the balance shown on the statement.
+7. If the statement shows the balance at the end of each transaction, use that.
+
+THE EXACT SCHEMA:
 {
   "transactions": [
     {
       "id": 1,
-      "date": "1st November 2018",
-      "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order",
-      "description": "Clean description",
-      "amount": "£10.00",
-      "balance": "£500.00"
+      "date": "10/01/2025",
+      "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order | Wire | ACH | POS | Check | Fee",
+      "description": "Full transaction description",
+      "amount": "$1,234.56",
+      "balance": "$157,100.00"
     }
   ]
-}`;
+}
+
+EXAMPLES OF CORRECT BALANCE EXTRACTION:
+- If the statement shows "$157,100.00" as the balance, output "$157,100.00".
+- If the statement shows "£500.00" as the balance, output "£500.00".
+- If the statement shows "€1,200.00" as the balance, output "€1,200.00".
+
+OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION. JUST THE JSON.`;
 
     const { response, modelUsed } = await generateWithFallback(ai, {
       contents: [
@@ -242,8 +257,8 @@ export async function POST(req: Request) {
       ],
       config: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 4096,
-        temperature: 0.1,
+        maxOutputTokens: 8192, // 🔥 Increased for more accurate extraction
+        temperature: 0.0, // 🔥 Zero temperature = deterministic, consistent output
       },
     });
 
@@ -253,6 +268,20 @@ export async function POST(req: Request) {
     const transactions = Array.isArray(parsedData)
       ? parsedData
       : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
+
+    // 🔥 Add debug logs to see what balance is being extracted
+    if (transactions.length > 0) {
+      console.log('📊 First transaction:', {
+        date: transactions[0]?.date,
+        amount: transactions[0]?.amount,
+        balance: transactions[0]?.balance,
+      });
+      console.log('📊 Last transaction:', {
+        date: transactions[transactions.length - 1]?.date,
+        amount: transactions[transactions.length - 1]?.amount,
+        balance: transactions[transactions.length - 1]?.balance,
+      });
+    }
 
     console.log(`✅ Returning ${transactions.length} transactions, page_count: ${pageCount}`);
 
