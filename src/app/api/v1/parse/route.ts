@@ -11,30 +11,23 @@ export const config = {
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 const GEMINI_MODELS = ['gemini-3.6-flash'];
 
-// Advanced text stream parser to convert raw text lists back into pristine objects in milliseconds
-function parseTextToJSON(text: string): any[] {
-  const transactions: any[] = [];
+function cleanAndParseJSON(rawResponse: string): any {
+  let clean = rawResponse.trim();
+  clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
   try {
-    const lines = text.split('\n');
-    let currentId = 1;
-    
-    for (const line of lines) {
-      if (!line.includes('|')) continue;
-      const parts = line.split('|').map(p => p.trim());
-      if (parts.length < 5) continue;
-      
-      transactions.push({
-        id: currentId++,
-        date: parts[0] || '',
-        type: parts[1] || 'Transaction',
-        description: parts[2] || '',
-        amount: parts[3] || '$0.00',
-        balance: parts[4] || '$0.00'
-      });
-    }
-    return transactions;
+    return JSON.parse(clean);
   } catch {
-    return [];
+    const lastValidObjectIndex = clean.lastIndexOf('}');
+    if (lastValidObjectIndex !== -1) {
+      const salvaged = clean.substring(0, lastValidObjectIndex + 1) + ']}';
+      try {
+        return JSON.parse(salvaged);
+      } catch {
+        const salvagedArray = clean.substring(0, lastValidObjectIndex + 1) + ']';
+        return JSON.parse(salvagedArray);
+      }
+    }
+    return { transactions: [] };
   }
 }
 
@@ -52,40 +45,59 @@ async function extractPageRange(srcDoc: PDFDocument, start: number, end: number)
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
+    if (!apiKey) {
+      return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
+    }
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    }
 
     const bytes = await file.arrayBuffer();
     const rawBuffer = Buffer.from(bytes);
 
     const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
-    
-    // Balanced concurrent sharding configuration
-    const chunkSize = 20; 
+
+    // ⚡ THE CHEAT CODE: Chunk size matches total pages for short files, groups efficiently for long files
+    const chunkSize = totalPages <= 5 ? totalPages : 30; 
     const chunks: { start: number; end: number }[] = [];
 
     for (let i = 0; i < totalPages; i += chunkSize) {
-      chunks.push({ start: i, end: Math.min(i + chunkSize - 1, totalPages - 1) });
+      chunks.push({
+        start: i,
+        end: Math.min(i + chunkSize - 1, totalPages - 1)
+      });
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    console.log(`🚀 CHEAT-CODE ACTIVE: INITIATING PARALLEL TEXT STREAM ON ${chunks.length} BATCHES...`);
+    console.log(`🚀 JET ENGINE SPEED ACTIVE: EXECUTING ${chunks.length} PARALLEL COMPILATIONS...`);
 
     const chunkPromises = chunks.map(async (chunk) => {
       const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
       
-      // Prompt optimized for high-speed raw textual extraction instead of slow JSON schemas
-      const prompt = `Extract ALL transaction rows from this bank statement chunk. Output raw text lines only.
-      Format exactly like this for EVERY row, using pipe delimiters, with no markdown code blocks and no text description headers:
-      Date | Type | Description | Amount | RunningBalance
-      
-      LAWS:
-      1. Extract EVERY single transaction row printed. DO NOT skip or truncate data.
-      2. Withdrawals/debits MUST be prefixed explicitly with a minus sign like "-$42,148.24".`;
+      const prompt = `You are a professional ledger parser. Extract ALL transaction rows from this bank statement chunk.
+
+CRITICAL PRECISION RULES:
+1. Extract EVERY single row printed. DO NOT skip or truncate data.
+2. Read the running balance directly from the right-hand side column of each row EXACTLY as printed. DO NOT calculate balances.
+3. Hard-enforcement for outbounds/debits: If an amount represents a withdrawal, charge, or negative value (indicated by parentheses like "(42,148.24)" or minus sign "-42,148.24"), you MUST output it with an explicit minus sign prefixed to the string, like "-$42,148.24".
+
+RETURN SCHEMA:
+{
+  "transactions": [
+    {
+      "id": 1,
+      "date": "Date",
+      "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
+      "description": "Full row details",
+      "amount": "-$42,148.24",
+      "balance": "$157,100.00"
+    }
+  ]
+}`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3.6-flash',
@@ -94,19 +106,23 @@ export async function POST(req: Request) {
           { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
         ],
         config: { 
-          temperature: 0.0 // Locks analytical precision
+          responseMimeType: 'application/json', 
+          temperature: 0.0 
         }
       });
 
-      return response.text || '';
+      const chunkText = response.text || '{}';
+      const chunkData = cleanAndParseJSON(chunkText);
+      return chunkData.transactions || chunkData.rows || chunkData || [];
     });
 
-    const resolvedTexts = await Promise.all(chunkPromises);
+    const resolvedSegments = await Promise.all(chunkPromises);
     let masterTransactions: any[] = [];
     
-    for (const textChunk of resolvedTexts) {
-      const parsedRows = parseTextToJSON(textChunk);
-      masterTransactions = masterTransactions.concat(parsedRows);
+    for (const segment of resolvedSegments) {
+      if (Array.isArray(segment)) {
+        masterTransactions = masterTransactions.concat(segment);
+      }
     }
 
     const finalizedRows = masterTransactions.map((tx, index) => ({
@@ -114,18 +130,18 @@ export async function POST(req: Request) {
       id: index + 1
     }));
 
-    console.log(`✅ CHEAT-CODE SUCCESS: Extracted ${finalizedRows.length} total rows in parallel.`);
+    console.log(`✅ JET ENGINE EXECUTION COMPLETE: Extracted ${finalizedRows.length} total rows.`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Hyper-Speed Concurrent Stream',
+      engine_used: 'SwiftLedger Jet Engine Parallel Stream',
       total_transactions: finalizedRows.length,
       page_count: totalPages,
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('Parser Exception:', error);
+    console.error('System Exception caught:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }
