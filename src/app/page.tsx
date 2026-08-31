@@ -21,21 +21,18 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
   { id: 6, date: '5th November 2026', type: 'Direct Debit', description: 'Fitness Club Membership', amount: '-£32.50', balance: '£368.50' },
 ];
 
+// ============================================================
+// 🔥 SIMPLIFIED CURRENCY PARSING
+// ============================================================
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const cleaned = value.replace(/[^0-9.-]/g, '');
   return parseFloat(cleaned) || 0;
 }
 
-function getSignedAmount(row: Transaction): number {
-  const raw = parseCurrency(row.amount);
-  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order'];
-  if (raw > 0 && debitTypes.includes(row.type)) {
-    return -raw;
-  }
-  return raw;
-}
-
+// ============================================================
+// 🔥 EXPORT GENERATORS
+// ============================================================
 function generateCSV(rows: Transaction[]): string {
   if (!rows.length) return '';
   const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
@@ -56,7 +53,7 @@ function generateXeroCSV(rows: Transaction[], bank: string = ''): string {
   const csvRows = rows.map((r) => [
     r.date,
     `${r.description} (${r.type})`,
-    getSignedAmount(r).toFixed(2),
+    parseCurrency(r.amount).toFixed(2),
     parseCurrency(r.balance).toFixed(2),
     bank || 'General',
   ]);
@@ -104,7 +101,7 @@ NEWFILEUID:NONE
 `;
   let ofxBody = '';
   rows.forEach((r, i) => {
-    const amount = getSignedAmount(r);
+    const amount = parseCurrency(r.amount);
     const isCredit = amount >= 0;
     const type = isCredit ? 'CREDIT' : 'DEBIT';
     const amtStr = Math.abs(amount).toFixed(2);
@@ -139,7 +136,7 @@ function generateQBO(rows: Transaction[], bank: string = ''): string {
 Dated\tDescription\tWithdrawal\tDeposit\tBalance
 `;
   rows.forEach((r) => {
-    const amount = getSignedAmount(r);
+    const amount = parseCurrency(r.amount);
     const isCredit = amount >= 0;
     const amtStr = Math.abs(amount).toFixed(2);
     const date = new Date(r.date);
@@ -209,8 +206,6 @@ export default function Home() {
     ofx: true,
     qbo: true,
   });
-
-  // 🔥 Pending download state
   const [pendingDownload, setPendingDownload] = useState<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -233,7 +228,6 @@ export default function Home() {
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
 
-  // 🔥 Check for pending download on page load
   useEffect(() => {
     const pending = sessionStorage.getItem('pendingDownload');
     if (pending) {
@@ -286,15 +280,28 @@ export default function Home() {
         setCurrentPageCount(pageCount);
         const priceInfo = getPrice(pageCount);
 
+        // 🔥 CRITICAL: Use the balance FROM THE PDF, don't calculate it
+        const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
+        const firstRow = rows.length > 0 ? rows[0] : null;
+        
+        const closingBalance = lastRow ? parseCurrency(lastRow.balance) : 0;
+        const openingBalance = firstRow ? parseCurrency(firstRow.balance) : 0;
+
+        // Calculate totals for display only
         let totalCredits = 0, totalDebits = 0;
         rows.forEach((tx: Transaction) => {
-          const amt = getSignedAmount(tx);
-          if (amt >= 0) totalCredits += amt;
-          else totalDebits += Math.abs(amt);
+          const amt = parseCurrency(tx.amount);
+          if (amt < 0) {
+            totalDebits += Math.abs(amt);
+          } else {
+            totalCredits += amt;
+          }
         });
+
         const dates = rows.map((tx: Transaction) => new Date(tx.date));
         const firstDate = dates.length ? dates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
         const lastDate = dates.length ? dates[dates.length - 1].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
         setStats({
           fileName: file.name,
           pageCount,
@@ -305,7 +312,9 @@ export default function Home() {
           badge: priceInfo.badge,
           totalCredits,
           totalDebits,
-          netBalance: totalCredits - totalDebits,
+          netBalance: closingBalance, // 🔥 Use the actual balance from PDF
+          openingBalance: openingBalance,
+          closingBalance: closingBalance,
           firstDate,
           lastDate,
         });
@@ -341,10 +350,14 @@ export default function Home() {
     const priceInfo = getPrice(6);
     let totalCredits = 0, totalDebits = 0;
     SAMPLE_DEMO_DATA.forEach((tx) => {
-      const amt = getSignedAmount(tx);
-      if (amt >= 0) totalCredits += amt;
-      else totalDebits += Math.abs(amt);
+      const amt = parseCurrency(tx.amount);
+      if (amt < 0) {
+        totalDebits += Math.abs(amt);
+      } else {
+        totalCredits += amt;
+      }
     });
+    const lastRow = SAMPLE_DEMO_DATA[SAMPLE_DEMO_DATA.length - 1];
     setStats({
       fileName: 'sample_statement_demo.pdf',
       pageCount: 6,
@@ -355,14 +368,15 @@ export default function Home() {
       badge: priceInfo.badge,
       totalCredits,
       totalDebits,
-      netBalance: totalCredits - totalDebits,
+      netBalance: parseCurrency(lastRow.balance),
+      openingBalance: parseCurrency(SAMPLE_DEMO_DATA[0].balance),
+      closingBalance: parseCurrency(lastRow.balance),
       firstDate: '1st November 2026',
       lastDate: '5th November 2026',
     });
     setShowStats(true);
   };
 
-  // 🔥 WHOP PRODUCT URLs (Replace with YOUR actual Whop product page URLs)
   const whopUrls: Record<string, string> = {
     '5': 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',
     '25': 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',
@@ -370,7 +384,6 @@ export default function Home() {
     '85': 'https://whop.com/vercel-3f41/swiftledger-enterprise-51-pages/',
   };
 
-  // 🔥 Handle payment + redirect to Whop
   const handlePayAndDownload = async () => {
     if (!stats) return;
 
@@ -387,7 +400,6 @@ export default function Home() {
       return;
     }
 
-    // Store file data in sessionStorage for after payment
     sessionStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
       fileName: fileName || 'statement',
@@ -395,14 +407,10 @@ export default function Home() {
       bank: selectedBank,
     }));
 
-    // 🔥 Open Whop in new tab
     window.open(checkoutUrl, '_blank');
-    
-    // 🔥 Show message
     alert('🛒 Opening Whop checkout in a new tab. Complete payment there, then come back and click "Download" to get your CSV.');
   };
 
-  // 🔥 Handle download after payment
   const handleDownloadAfterPayment = () => {
     if (!pendingDownload) return;
     
@@ -430,7 +438,6 @@ export default function Home() {
       <div className="orb orb-1" />
       <div className="orb orb-2" />
 
-      {/* ===== HERO ===== */}
       <div className="text-center max-w-4xl mx-auto z-10 mt-10 animate-fade-up">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium uppercase tracking-wider mb-4">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -451,7 +458,6 @@ export default function Home() {
         </p>
       </div>
 
-      {/* ===== COMPETITOR BADGE ===== */}
       <div className="w-full max-w-2xl mx-auto z-10 mt-6 animate-fade-up-delay-1">
         <div className="bg-slate-900/60 border border-slate-800/50 rounded-2xl p-3.5 flex flex-wrap items-center justify-center gap-3 md:gap-5">
           {[
@@ -468,7 +474,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ===== TRUST BAR ===== */}
       <div className="w-full max-w-4xl mx-auto z-10 mt-8 animate-fade-up-delay-2">
         <p className="text-center text-[9px] text-slate-500 uppercase tracking-[0.2em] mb-4">Trusted by finance teams at</p>
         <div className="flex flex-wrap items-center justify-center gap-8 md:gap-10">
@@ -478,7 +483,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ===== UPLOAD ZONE ===== */}
       <div className="w-full max-w-xl mx-auto z-10 mt-8 animate-fade-up-delay-3">
         <div
           onClick={() => fileInputRef.current?.click()}
@@ -522,7 +526,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ===== LOADING ===== */}
       {loading && (
         <div className="w-full max-w-2xl mx-auto z-10 mt-6 animate-fade-up">
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
@@ -549,7 +552,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ===== PENDING DOWNLOAD BUTTON ===== */}
       {pendingDownload && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-4 animate-fade-up">
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
@@ -567,7 +569,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ===== STATS CARD ===== */}
       {showStats && stats && parsedData.length > 0 && !loading && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-6 animate-fade-up-delay-1">
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
@@ -655,7 +656,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ===== PREVIEW TABLE ===== */}
       {parsedData.length > 0 && !loading && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-4 animate-fade-up-delay-2">
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">

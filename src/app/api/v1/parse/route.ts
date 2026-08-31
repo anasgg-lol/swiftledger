@@ -28,9 +28,6 @@ function cleanAndParseJSON(rawResponse: string): any {
   }
 }
 
-// ============================================================
-// 🔥 pdf-parse with proper type handling
-// ============================================================
 async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
   try {
     // @ts-ignore
@@ -43,9 +40,6 @@ async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
   }
 }
 
-// ============================================================
-// 🔥 pdfjs-dist with proper import
-// ============================================================
 async function getPageCountPdfJs(buffer: Buffer): Promise<number | null> {
   try {
     try {
@@ -63,9 +57,6 @@ async function getPageCountPdfJs(buffer: Buffer): Promise<number | null> {
   }
 }
 
-// ============================================================
-// 🔥 Gemini Vision Fallback (for scanned/corrupted PDFs)
-// ============================================================
 async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -101,9 +92,6 @@ async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
   }
 }
 
-// ============================================================
-// 🔥 MASTER PAGE COUNT FUNCTION
-// ============================================================
 async function getPDFPageCount(buffer: Buffer): Promise<number> {
   const count1 = await getPageCountPdfParse(buffer);
   if (count1 !== null && count1 > 0) {
@@ -123,9 +111,6 @@ async function getPDFPageCount(buffer: Buffer): Promise<number> {
   return count3;
 }
 
-// ============================================================
-// 🔥 GEMINI GENERATION WITH FALLBACK
-// ============================================================
 async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
   let lastError: any = null;
   for (const modelName of GEMINI_MODELS) {
@@ -154,9 +139,6 @@ async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
   throw lastError || new Error('All Gemini model endpoints failed.');
 }
 
-// ============================================================
-// 🔥 POST HANDLER – FULLY FIXED
-// ============================================================
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -211,46 +193,50 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey });
 
     // ============================================================
-    // 🔥 IMPROVED PROMPT – PARENTHESIS HANDLING + BALANCE FORCE
+    // 🔥 ULTIMATE PROMPT – FORCES CORRECT BALANCE EXTRACTION
     // ============================================================
     const prompt = `You are a financial document parser. Extract ALL transactions from this bank statement.
 
-CRITICAL RULES FOR AMOUNTS:
-1. If an amount is in parentheses like "(1,476.44)", it is a DEBIT (negative) - output it as "-$1,476.44" or "-£1,476.44".
-2. If an amount has a minus sign like "-1,476.44", it is a DEBIT (negative) - output it as "-$1,476.44".
-3. If an amount is positive with no parentheses or minus sign, it is a CREDIT (positive) - output it as "$1,476.44".
-4. The amount MUST include the currency symbol ($, £, €, etc.).
-5. The amount MUST be a string with the sign, like "$1,476.44" or "-£1,476.44".
-
-CRITICAL RULES FOR BALANCES:
+CRITICAL RULES FOR THE "balance" FIELD:
 1. EVERY transaction MUST include a "balance" field.
 2. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
-3. Look for the RIGHTMOST column in the table - that's the balance.
-4. The balance is usually shown as a positive number without parentheses.
-5. The balance must include the currency symbol ($, £, €, etc.).
-6. DO NOT calculate the balance. USE the balance shown on the statement.
+3. The balance is ALWAYS on the RIGHT side of the transaction row.
+4. The balance is ALWAYS a POSITIVE number (no parentheses, no minus sign).
+5. The balance MUST include the currency symbol ($, £, €, etc.).
+6. DO NOT calculate the balance. USE the balance EXACTLY as shown on the statement.
+7. If the statement shows "194,862.29" as the balance, output "$194,862.29".
+
+CRITICAL RULES FOR THE "amount" FIELD:
+1. If the PDF shows parentheses like "(1,476.44)", it's a DEBIT → output "-$1,476.44"
+2. If the PDF shows a minus sign like "-1,476.44", it's a DEBIT → output "-$1,476.44"
+3. If the PDF shows a positive number like "1,476.44", it's a CREDIT → output "$1,476.44"
+4. Look at the description to know if it's money in or money out.
 
 THE EXACT SCHEMA:
 {
   "transactions": [
     {
       "id": 1,
-      "date": "10/01/2025",
+      "date": "01/01/2026",
       "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order | Wire | ACH | POS | Check | Fee",
       "description": "Full transaction description",
-      "amount": "$1,234.56",    // or "-$1,234.56" for debits
+      "amount": "$1,234.56",
       "balance": "$157,100.00"
     }
   ]
 }
 
-EXAMPLES OF CORRECT PARSING:
-- PDF shows "(1,476.44)" → amount: "-$1,476.44"
-- PDF shows "1,476.44" → amount: "$1,476.44"
-- PDF shows "-1,476.44" → amount: "-$1,476.44"
-- PDF shows "$157,100.00" → balance: "$157,100.00"
+EXAMPLES OF CORRECT EXTRACTION:
+- PDF shows: "PURCHASE ... $1,156.94 $144,073.91"
+  → amount: "$1,156.94", balance: "$144,073.91"
+  
+- PDF shows: "PAYROLL ... $5,021.23 $155,356.46"
+  → amount: "$5,021.23", balance: "$155,356.46"
+  
+- PDF shows: "(8,166.82) 189,136.05"
+  → amount: "-$8,166.82", balance: "$189,136.05"
 
-OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION. JUST THE JSON.`;
+OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
 
     const { response, modelUsed } = await generateWithFallback(ai, {
       contents: [
@@ -275,20 +261,6 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION. JUST THE JSON.`;
     const transactions = Array.isArray(parsedData)
       ? parsedData
       : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
-
-    // 🔥 DEBUG LOGS - See what balance is being extracted
-    if (transactions.length > 0) {
-      console.log('📊 First transaction:', {
-        date: transactions[0]?.date,
-        amount: transactions[0]?.amount,
-        balance: transactions[0]?.balance,
-      });
-      console.log('📊 Last transaction:', {
-        date: transactions[transactions.length - 1]?.date,
-        amount: transactions[transactions.length - 1]?.amount,
-        balance: transactions[transactions.length - 1]?.balance,
-      });
-    }
 
     console.log(`✅ Returning ${transactions.length} transactions, page_count: ${pageCount}`);
 
