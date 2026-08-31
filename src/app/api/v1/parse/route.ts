@@ -9,7 +9,6 @@ export const config = {
 };
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
-const GEMINI_MODELS = ['gemini-3.6-flash'];
 
 function cleanAndParseJSON(rawResponse: string): any {
   let clean = rawResponse.trim();
@@ -45,15 +44,11 @@ async function extractPageRange(srcDoc: PDFDocument, start: number, end: number)
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-    }
+    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
 
     const bytes = await file.arrayBuffer();
     const rawBuffer = Buffer.from(bytes);
@@ -61,67 +56,96 @@ export async function POST(req: Request) {
     const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
 
-    // ⚡ THE CHEAT CODE: Chunk size matches total pages for short files, groups efficiently for long files
-    const chunkSize = totalPages <= 5 ? totalPages : 30; 
-    const chunks: { start: number; end: number }[] = [];
-
-    for (let i = 0; i < totalPages; i += chunkSize) {
-      chunks.push({
-        start: i,
-        end: Math.min(i + chunkSize - 1, totalPages - 1)
-      });
+    // ⚡ STEP 1: LIGHTWEIGHT LOCAL TEXT STRING EXTRACTION (COMPLETES IN MILLISECONDS)
+    let localTextContent = '';
+    try {
+      const pdfParse = require('pdf-parse');
+      const parsed = await pdfParse(rawBuffer);
+      localTextContent = parsed.text || '';
+    } catch (e) {
+      console.warn('⚠️ Local text layer parse fallback activated.');
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    console.log(`🚀 JET ENGINE SPEED ACTIVE: EXECUTING ${chunks.length} PARALLEL COMPILATIONS...`);
+    let masterTransactions: any[] = [];
 
-    const chunkPromises = chunks.map(async (chunk) => {
-      const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
+    // If a clean digital font text dump exists, bypass visual rendering queues completely
+    if (localTextContent.trim().length > 50) {
+      console.log('⚡ DIGITAL LOGIC DETECTED: EXECUTING HIGH-SPEED CHARACTER HANDSHAKE...');
       
-      const prompt = `You are a professional ledger parser. Extract ALL transaction rows from this bank statement chunk.
+      const textPrompt = `You are a financial data compiler. Convert this raw bank statement text dump into a structured JSON array.
+      
+      CRITICAL ACCURACY LAWS:
+      1. Extract EVERY single transaction row printed. DO NOT skip or truncate rows.
+      2. Read the running balance directly from the data lines exactly as printed. DO NOT calculate balances.
+      3. For outbounds/debits: Prefix the amount string explicitly with a minus sign, like "-$14,250.00" or "-$3,420.50".
 
-CRITICAL PRECISION RULES:
-1. Extract EVERY single row printed. DO NOT skip or truncate data.
-2. Read the running balance directly from the right-hand side column of each row EXACTLY as printed. DO NOT calculate balances.
-3. Hard-enforcement for outbounds/debits: If an amount represents a withdrawal, charge, or negative value (indicated by parentheses like "(42,148.24)" or minus sign "-42,148.24"), you MUST output it with an explicit minus sign prefixed to the string, like "-$42,148.24".
+      RAW DATA INPUT DUMP:
+      ${localTextContent}
 
-RETURN SCHEMA:
-{
-  "transactions": [
-    {
-      "id": 1,
-      "date": "Date",
-      "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
-      "description": "Full row details",
-      "amount": "-$42,148.24",
-      "balance": "$157,100.00"
-    }
-  ]
-}`;
+      RETURN SCHEMA:
+      {
+        "transactions": [
+          {
+            "id": 1,
+            "date": "Date",
+            "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
+            "description": "Full description details",
+            "amount": "-$3,420.50",
+            "balance": "$153,679.50"
+          }
+        ]
+      }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: [
-          { text: prompt },
-          { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
-        ],
+        model: 'gemini-3.6-flash', // Active new model deployment layer
+        contents: [{ text: textPrompt }],
         config: { 
-          responseMimeType: 'application/json', 
+          responseMimeType: 'application/json',
           temperature: 0.0 
         }
       });
 
-      const chunkText = response.text || '{}';
-      const chunkData = cleanAndParseJSON(chunkText);
-      return chunkData.transactions || chunkData.rows || chunkData || [];
-    });
+      const parsedData = cleanAndParseJSON(response.text || '{}');
+      masterTransactions = parsedData.transactions || parsedData.rows || parsedData || [];
+    } else {
+      // 📸 FALLBACK STEP 2: HYPER-SPEED PARALLEL CHUNKS FOR EMBEDDED SCANS / IMAGES
+      console.log('📸 SCANNED DOCUMENT DETECTED: LAUNCHING PARALLEL CONCURRENT VISUAL LOOPS...');
+      
+      // Dynamic scaling: single pages request 1 chunk, huge files split into broad 30-page buckets
+      const chunkSize = totalPages <= 5 ? totalPages : 30; 
+      const chunks: { start: number; end: number }[] = [];
 
-    const resolvedSegments = await Promise.all(chunkPromises);
-    let masterTransactions: any[] = [];
-    
-    for (const segment of resolvedSegments) {
-      if (Array.isArray(segment)) {
-        masterTransactions = masterTransactions.concat(segment);
+      for (let i = 0; i < totalPages; i += chunkSize) {
+        chunks.push({ start: i, end: Math.min(i + chunkSize - 1, totalPages - 1) });
+      }
+
+      const chunkPromises = chunks.map(async (chunk) => {
+        const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
+        
+        const visualPrompt = `Extract ALL transaction rows from this bank statement chunk.
+        Withdrawals/debits MUST be prefixed explicitly with a minus sign like "-$42,148.24".
+        Read the balance column exactly as printed. Do not calculate.
+        
+        RETURN SCHEMA:
+        { "transactions": [{ "id": 1, "date": "Date", "type": "Type", "description": "Details", "amount": "-$42,148.24", "balance": "$157,100.00" }] }`;
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: [
+            { text: visualPrompt },
+            { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
+          ],
+          config: { responseMimeType: 'application/json', temperature: 0.0 }
+        });
+
+        const chunkData = cleanAndParseJSON(response.text || '{}');
+        return chunkData.transactions || chunkData.rows || chunkData || [];
+      });
+
+      const resolvedSegments = await Promise.all(chunkPromises);
+      for (const segment of resolvedSegments) {
+        if (Array.isArray(segment)) masterTransactions = masterTransactions.concat(segment);
       }
     }
 
@@ -130,18 +154,18 @@ RETURN SCHEMA:
       id: index + 1
     }));
 
-    console.log(`✅ JET ENGINE EXECUTION COMPLETE: Extracted ${finalizedRows.length} total rows.`);
+    console.log(`✅ COMPLETE: Extracted ${finalizedRows.length} total transaction rows.`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Jet Engine Parallel Stream',
+      engine_used: 'SwiftLedger Gemini 3.6 Hybrid Stream',
       total_transactions: finalizedRows.length,
       page_count: totalPages,
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('System Exception caught:', error);
+    console.error('Core Exception caught:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }

@@ -45,17 +45,16 @@ function parseCurrency(value: string): number {
   return numericValue;
 }
 
-// Enforces correct mathematical states for all balance logs and debit filters
 function getSignedAmount(row: Transaction): number {
   const amount = parseCurrency(row.amount);
   const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS'];
   
-  // Force conversion to negative if amount is positive but matches a known withdrawal keyword
   if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
     return -amount;
   }
   return amount;
 }
+
 
 
 
