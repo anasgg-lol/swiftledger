@@ -111,6 +111,9 @@ async function getPDFPageCount(buffer: Buffer): Promise<number> {
   return count3;
 }
 
+// ============================================================
+// 🔥 SIMPLIFIED: Just use the buffer as-is, no PDF manipulation
+// ============================================================
 async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
   let lastError: any = null;
   for (const modelName of GEMINI_MODELS) {
@@ -175,11 +178,13 @@ export async function POST(req: Request) {
       else mimeType = 'image/jpeg';
     }
 
+    // 🔥 Get page count for PDFs
     if (mimeType === 'application/pdf') {
       pageCount = await getPDFPageCount(rawBuffer);
       console.log(`📄 Final page count: ${pageCount}`);
     }
 
+    // Process images with Sharp
     if (mimeType.startsWith('image/')) {
       processedBuffer = await sharp(rawBuffer)
         .rotate()
