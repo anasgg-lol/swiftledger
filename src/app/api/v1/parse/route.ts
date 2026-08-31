@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import sharp from 'sharp';
+import { PDFDocument } from 'pdf-lib';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -28,6 +29,100 @@ function cleanAndParseJSON(rawResponse: string): any {
   }
 }
 
+// ============================================================
+// 🔥 DETECT CORRUPTED PAGES (year ranges like "2020- 2021-")
+// ============================================================
+function isPageCorrupted(text: string): boolean {
+  const yearRangePattern = /\d{4}-\s+\d{4}-/;
+  const matches = text.match(yearRangePattern);
+  if (matches && matches.length > 0) {
+    const yearCount = (text.match(/\d{4}-\s+\d{4}-/g) || []).length;
+    return yearCount > 5;
+  }
+  return false;
+}
+
+// ============================================================
+// 🔥 EXTRACT ONLY VALID PAGES FROM PDF
+// ============================================================
+async function extractValidPages(buffer: Buffer): Promise<Buffer> {
+  try {
+    const pdfParse = require('pdf-parse');
+    const fullText = await pdfParse(buffer);
+    
+    if (!fullText || !fullText.text) {
+      console.log('⚠️ Could not parse PDF text, using original PDF');
+      return buffer;
+    }
+    
+    const text = fullText.text;
+    const lines = text.split('\n');
+    const corruptedPages = new Set<number>();
+    let currentPage = 1;
+    let currentPageText = '';
+    
+    for (const line of lines) {
+      const pageMatch = line.match(/===== Page (\d+) =====/);
+      if (pageMatch) {
+        if (currentPageText && isPageCorrupted(currentPageText)) {
+          corruptedPages.add(currentPage);
+          console.log(`⚠️ Page ${currentPage} detected as corrupted (year ranges)`);
+        }
+        currentPage = parseInt(pageMatch[1], 10);
+        currentPageText = '';
+      } else {
+        currentPageText += line + '\n';
+      }
+    }
+    
+    if (currentPageText && isPageCorrupted(currentPageText)) {
+      corruptedPages.add(currentPage);
+      console.log(`⚠️ Page ${currentPage} detected as corrupted (year ranges)`);
+    }
+    
+    if (corruptedPages.size === 0) {
+      console.log('✅ No corrupted pages detected, using original PDF');
+      return buffer;
+    }
+    
+    const pdfDoc = await PDFDocument.load(buffer);
+    const totalPages = pdfDoc.getPageCount();
+    const validPageIndices: number[] = [];
+    
+    for (let i = 0; i < totalPages; i++) {
+      const pageNum = i + 1;
+      if (!corruptedPages.has(pageNum)) {
+        validPageIndices.push(i);
+      }
+    }
+    
+    if (validPageIndices.length === 0) {
+      console.log('⚠️ All pages detected as corrupted, using original PDF');
+      return buffer;
+    }
+    
+    const newDoc = await PDFDocument.create();
+    const pages = await newDoc.copyPages(pdfDoc, validPageIndices);
+    for (const page of pages) {
+      newDoc.addPage(page);
+    }
+    
+    const newPdfBytes = await newDoc.save();
+    // 🔥 FIX: Convert Uint8Array to Buffer properly
+    const newBuffer = Buffer.from(newPdfBytes.buffer, 0, newPdfBytes.byteLength);
+    
+    console.log(`✅ Created clean PDF: ${validPageIndices.length} valid pages (removed ${corruptedPages.size} corrupted pages)`);
+    return newBuffer;
+    
+  } catch (error) {
+    console.warn('⚠️ Page extraction failed, using original PDF:', error);
+    return buffer;
+  }
+}
+
+// ============================================================
+// 🔥 PDF PARSING FUNCTIONS
+// ============================================================
 async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
   try {
     // @ts-ignore
@@ -111,9 +206,6 @@ async function getPDFPageCount(buffer: Buffer): Promise<number> {
   return count3;
 }
 
-// ============================================================
-// 🔥 SIMPLIFIED: Just use the buffer as-is, no PDF manipulation
-// ============================================================
 async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
   let lastError: any = null;
   for (const modelName of GEMINI_MODELS) {
@@ -142,6 +234,9 @@ async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
   throw lastError || new Error('All Gemini model endpoints failed.');
 }
 
+// ============================================================
+// 🔥 POST HANDLER – WITH CORRUPTION CLEANUP
+// ============================================================
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -168,7 +263,7 @@ export async function POST(req: Request) {
     const bytes = await file.arrayBuffer();
     const rawBuffer = Buffer.from(bytes);
 
-    let processedBuffer = rawBuffer;
+    let processedBuffer: Buffer = rawBuffer;
     let mimeType = file.type || '';
     let pageCount = 1;
 
@@ -178,15 +273,24 @@ export async function POST(req: Request) {
       else mimeType = 'image/jpeg';
     }
 
-    // 🔥 Get page count for PDFs
+    // 🔥 Remove corrupted pages before processing
     if (mimeType === 'application/pdf') {
-      pageCount = await getPDFPageCount(rawBuffer);
+      try {
+        console.log('🔄 Attempting to clean corrupted pages...');
+        const cleanedBuffer = await extractValidPages(rawBuffer);
+        processedBuffer = cleanedBuffer;
+        console.log(`📄 Cleaned PDF size: ${processedBuffer.length} bytes`);
+      } catch (error) {
+        console.warn('⚠️ PDF cleaning warning:', error);
+        processedBuffer = rawBuffer;
+      }
+      
+      pageCount = await getPDFPageCount(processedBuffer);
       console.log(`📄 Final page count: ${pageCount}`);
     }
 
-    // Process images with Sharp
     if (mimeType.startsWith('image/')) {
-      processedBuffer = await sharp(rawBuffer)
+      processedBuffer = await sharp(processedBuffer)
         .rotate()
         .resize({ width: 1200, fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 75 })
@@ -197,13 +301,10 @@ export async function POST(req: Request) {
     const base64Data = processedBuffer.toString('base64');
     const ai = new GoogleGenAI({ apiKey });
 
-    // ============================================================
-    // 🔥 IMPROVED PROMPT WITH MAX TOKENS
-    // ============================================================
     const prompt = `You are a financial document parser. Extract ALL transactions from this bank statement.
 
 CRITICAL RULES:
-1. Extract EVERY transaction row. DO NOT skip any. Include ALL rows from ALL pages.
+1. Extract EVERY transaction row. DO NOT skip any.
 2. EVERY transaction MUST include a "balance" field.
 3. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
 4. The balance is ALWAYS on the RIGHT side of the transaction row.
@@ -250,7 +351,7 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
       ],
       config: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 16384, // 🔥 MAX TOKENS
+        maxOutputTokens: 16384,
         temperature: 0.0,
       },
     });
@@ -262,7 +363,6 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
       ? parsedData
       : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
 
-    // 🔥 DEBUG: Log last 5 transactions
     if (transactions.length > 0) {
       const last5 = transactions.slice(-5);
       console.log('📊 Last 5 transactions:');
