@@ -49,8 +49,6 @@ public/
 src/
   app/
     api/
-      create-checkout/
-        route.ts
       v1/
         parse/
           route.ts
@@ -94,109 +92,6 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/app/payment/cancel/page.tsx">
-'use client';
-
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-
-export default function PaymentCancel() {
-  const router = useRouter();
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      router.push('/');
-    }, 5000);
-
-    return () => clearTimeout(timer);
-  }, [router]);
-
-  return (
-    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6">
-      <div className="max-w-md text-center">
-        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-          <svg className="w-10 h-10 text-amber-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-            <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-        <h1 className="text-3xl font-bold text-white">Payment Cancelled</h1>
-        <p className="text-slate-400 mt-3">Your payment was cancelled. No charges were made.</p>
-        <Link
-          href="/"
-          className="inline-block mt-6 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-medium rounded-xl text-sm transition-colors"
-        >
-          ← Back to SwiftLedger
-        </Link>
-        <p className="text-xs text-slate-500 mt-4">Redirecting in 5 seconds...</p>
-      </div>
-    </main>
-  );
-}
-</file>
-
-<file path="src/app/payment/success/page.tsx">
-'use client';
-
-import { useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-
-export default function PaymentSuccess() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const [countdown, setCountdown] = useState(5);
-
-  const pageCount = searchParams.get('pageCount');
-  const txCount = searchParams.get('txCount');
-  const file = searchParams.get('file');
-
-  // Auto-redirect to home after 5 seconds
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          router.push('/');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [router]);
-
-  return (
-    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6">
-      <div className="max-w-md text-center">
-        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-          <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-        <h1 className="text-3xl font-bold text-white">✅ Payment Successful!</h1>
-        <p className="text-slate-400 mt-3">
-          Your payment was successful. You can now download your CSV.
-        </p>
-        <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-          <p className="text-emerald-400 font-medium">
-            📄 {file || 'Your statement'} – {txCount || 0} transactions
-          </p>
-        </div>
-        <Link
-          href="/"
-          className="inline-block mt-6 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-medium rounded-xl text-sm transition-colors"
-        >
-          ← Back to SwiftLedger
-        </Link>
-        <p className="text-xs text-slate-500 mt-4">Redirecting in {countdown}s</p>
-      </div>
-    </main>
-  );
-}
-</file>
-
 <file path="public/file.svg">
 <svg fill="none" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 13.5V5.41a1 1 0 0 0-.3-.7L9.8.29A1 1 0 0 0 9.08 0H1.5v13.5A2.5 2.5 0 0 0 4 16h8a2.5 2.5 0 0 0 2.5-2.5m-1.5 0v-7H8v-5H3v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1M9.5 5V2.12L12.38 5zM5.13 5h-.62v1.25h2.12V5zm-.62 3h7.12v1.25H4.5zm.62 3h-.62v1.25h7.12V11z" clip-rule="evenodd" fill="#666" fill-rule="evenodd"/></svg>
 </file>
@@ -215,344 +110,6 @@ export default function PaymentSuccess() {
 
 <file path="public/window.svg">
 <svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
-</file>
-
-<file path="src/app/api/create-checkout/route.ts">
-import { NextResponse } from 'next/server';
-
-const WHOP_API_URL = 'https://api.whop.com/v2';
-
-export async function POST(req: Request) {
-  try {
-    const { price, pageCount, transactionCount, fileName } = await req.json();
-
-    // Map price to product ID
-    const productMap: Record<string, string> = {
-      '5': process.env.WHOP_PRODUCT_ID_STARTER || '',
-      '25': process.env.WHOP_PRODUCT_ID_BUSINESS || '',
-      '45': process.env.WHOP_PRODUCT_ID_CORPORATE || '',
-      '85': process.env.WHOP_PRODUCT_ID_ENTERPRISE || '',
-    };
-
-    const productId = productMap[price.toString()];
-
-    if (!productId) {
-      console.error('❌ No product ID found for price:', price);
-      return NextResponse.json(
-        { error: 'Invalid price tier' },
-        { status: 400 }
-      );
-    }
-
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-
-    // Create Whop checkout link
-    const response = await fetch(`${WHOP_API_URL}/products/${productId}/checkout-links`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.WHOP_API_KEY}`,
-      },
-      body: JSON.stringify({
-        metadata: {
-          page_count: pageCount,
-          transaction_count: transactionCount,
-          file_name: fileName,
-        },
-        success_url: `${appUrl}/payment/success?pageCount=${pageCount}&txCount=${transactionCount}&file=${encodeURIComponent(fileName)}`,
-        cancel_url: `${appUrl}/payment/cancel`,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('❌ Whop API error:', data);
-      return NextResponse.json(
-        { error: data?.error?.message || 'Failed to create checkout' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      checkoutUrl: data.data.url,
-      success: true,
-    });
-  } catch (error) {
-    console.error('❌ Checkout error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to create checkout' },
-      { status: 500 }
-    );
-  }
-}
-</file>
-
-<file path="src/app/api/v1/parse/route.ts">
-import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
-import sharp from 'sharp';
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite',
-  'gemini-3.6-flash',
-  'gemini-3.7-flash',
-];
-
-function cleanAndParseJSON(rawResponse: string): any {
-  let clean = rawResponse.trim();
-  clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
-  try {
-    return JSON.parse(clean);
-  } catch {
-    const lastValidObjectIndex = clean.lastIndexOf('}');
-    if (lastValidObjectIndex !== -1) {
-      const salvaged = clean.substring(0, lastValidObjectIndex + 1) + ']}';
-      try {
-        return JSON.parse(salvaged);
-      } catch {
-        const salvagedArray = clean.substring(0, lastValidObjectIndex + 1) + ']';
-        return JSON.parse(salvagedArray);
-      }
-    }
-    throw new Error('Could not parse or salvage JSON output.');
-  }
-}
-
-// ============ ENGINE 1: pdf-parse (FIXED IMPORT) ============
-async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
-  try {
-    // Dynamic import with type assertion to bypass TypeScript
-    const pdfParseModule = await import('pdf-parse');
-    // @ts-ignore - pdf-parse might not have a default export in ESM mode
-    const pdfParse = pdfParseModule.default || pdfParseModule;
-    const data = await pdfParse(buffer);
-    return data.numpages || 1;
-  } catch (error) {
-    console.warn('⚠️ pdf-parse failed:', error);
-    return null;
-  }
-}
-
-// ============ ENGINE 2: pdfjs-dist ============
-async function getPageCountPdfJs(buffer: Buffer): Promise<number | null> {
-  try {
-    const pdfjsLib = await import('pdfjs-dist');
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-    return pdf.numPages;
-  } catch (error) {
-    console.warn('⚠️ pdfjs-dist failed:', error);
-    return null;
-  }
-}
-
-// ============ ENGINE 3: Gemini Vision (FINAL FALLBACK) ============
-async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
-  try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn('⚠️ No Gemini API key, using fallback 1');
-      return 1;
-    }
-    const base64Data = buffer.toString('base64');
-    const ai = new GoogleGenAI({ apiKey });
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash-lite',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: 'How many pages does this PDF have? Reply only with a number, nothing else.' },
-            { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
-          ],
-        },
-      ],
-      config: {
-        maxOutputTokens: 10,
-        temperature: 0.0,
-      },
-    });
-
-    const count = parseInt(response.text || '1', 10);
-    return count > 0 ? count : 1;
-  } catch (error) {
-    console.warn('⚠️ Gemini Vision fallback failed:', error);
-    return 1;
-  }
-}
-
-// ============ MASTER PAGE COUNT FUNCTION ============
-async function getPDFPageCount(buffer: Buffer): Promise<number> {
-  // Try pdf-parse first
-  const count1 = await getPageCountPdfParse(buffer);
-  if (count1 !== null && count1 > 0) {
-    console.log(`📄 pdf-parse: ${count1} pages`);
-    return count1;
-  }
-
-  // Fallback to pdfjs-dist
-  const count2 = await getPageCountPdfJs(buffer);
-  if (count2 !== null && count2 > 0) {
-    console.log(`📄 pdfjs-dist: ${count2} pages`);
-    return count2;
-  }
-
-  // Final fallback: Gemini Vision
-  console.log('⚠️ pdf-parse and pdfjs-dist failed. Using Gemini Vision fallback.');
-  const count3 = await getPageCountGeminiVision(buffer);
-  console.log(`📄 Gemini Vision: ${count3} pages`);
-  return count3;
-}
-
-// ============ GEMINI GENERATION WITH FALLBACK ============
-async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
-  let lastError: any = null;
-  for (const modelName of GEMINI_MODELS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          ...requestPayload,
-          model: modelName,
-        });
-        return { response, modelUsed: modelName };
-      } catch (error: any) {
-        lastError = error;
-        const isHighDemandOrRateLimit =
-          error?.status === 429 ||
-          error?.status === 503 ||
-          String(error).includes('high demand') ||
-          String(error).includes('RESOURCE_EXHAUSTED');
-        if (isHighDemandOrRateLimit && attempt < 2) {
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-        } else {
-          break;
-        }
-      }
-    }
-  }
-  throw lastError || new Error('All Gemini model endpoints failed.');
-}
-
-// ============ POST HANDLER ============
-export async function POST(req: Request) {
-  try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'GEMINI_API_KEY is missing from .env.local.' },
-        { status: 500 }
-      );
-    }
-
-    const formData = await req.formData();
-    const file = formData.get('file') as File;
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-    }
-
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        { error: 'File size exceeds 10MB limit.' },
-        { status: 400 }
-      );
-    }
-
-    const bytes = await file.arrayBuffer();
-    const rawBuffer = Buffer.from(bytes);
-
-    let processedBuffer = rawBuffer;
-    let mimeType = file.type || '';
-    let pageCount = 1;
-
-    // Infer mime-type
-    if (!mimeType) {
-      if (file.name.endsWith('.pdf')) mimeType = 'application/pdf';
-      else if (file.name.endsWith('.png')) mimeType = 'image/png';
-      else mimeType = 'image/jpeg';
-    }
-
-    // Get page count for PDFs using triple fallback
-    if (mimeType === 'application/pdf') {
-      pageCount = await getPDFPageCount(rawBuffer);
-      console.log(`📄 Final page count: ${pageCount}`);
-    }
-
-    // Process images with Sharp
-    if (mimeType.startsWith('image/')) {
-      processedBuffer = await sharp(rawBuffer)
-        .rotate()
-        .resize({ width: 1600, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85 })
-        .toBuffer();
-      mimeType = 'image/jpeg';
-    }
-
-    const base64Data = processedBuffer.toString('base64');
-    const ai = new GoogleGenAI({ apiKey });
-
-    const prompt = `Extract ALL financial transactions from this document into a JSON object matching this exact schema:
-{
-  "transactions": [
-    {
-      "id": 1,
-      "date": "1st November 2018",
-      "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order",
-      "description": "Clean description",
-      "amount": "£10.00",
-      "balance": "£500.00"
-    }
-  ]
-}`;
-
-    const { response, modelUsed } = await generateWithFallback(ai, {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            { inlineData: { data: base64Data, mimeType: mimeType } },
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 4096,
-        temperature: 0.1,
-      },
-    });
-
-    const responseText = response.text || '{}';
-    const parsedData = cleanAndParseJSON(responseText);
-
-    const transactions = Array.isArray(parsedData)
-      ? parsedData
-      : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
-
-    console.log(`✅ Returning ${transactions.length} transactions, page_count: ${pageCount}`);
-
-    return NextResponse.json({
-      success: true,
-      filename: file.name,
-      engine_used: `Gemini (${modelUsed})`,
-      total_transactions: transactions.length,
-      page_count: pageCount,
-      rows: transactions,
-    });
-  } catch (error: any) {
-    console.error('Parsing Error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error?.message || 'Parsing failed',
-        details: String(error),
-      },
-      { status: 500 }
-    );
-  }
-}
 </file>
 
 <file path="src/app/components/Footer.tsx">
@@ -1180,6 +737,379 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 </file>
 
+<file path=".gitignore">
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+</file>
+
+<file path="AGENTS.md">
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+</file>
+
+<file path="CLAUDE.md">
+@AGENTS.md
+</file>
+
+<file path="eslint.config.mjs">
+import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
+]);
+
+export default eslintConfig;
+</file>
+
+<file path="next.config.ts">
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  /* config options here */
+};
+
+export default nextConfig;
+</file>
+
+<file path="postcss.config.mjs">
+const config = {
+  plugins: {
+    "@tailwindcss/postcss": {},
+  },
+};
+
+export default config;
+</file>
+
+<file path="README.md">
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+
+## Getting Started
+
+First, run the development server:
+
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}
+</file>
+
+<file path="src/app/payment/cancel/page.tsx">
+'use client';
+
+import { Suspense } from 'react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+// ============================================================
+// 🔥 INNER COMPONENT
+// ============================================================
+function PaymentCancelContent() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      router.push('/');
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [router]);
+
+  return (
+    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center animate-fade-up">
+          <svg className="w-10 h-10 text-amber-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h1 className="text-3xl font-bold text-white animate-fade-up">Payment Cancelled</h1>
+        <p className="text-slate-400 mt-3 animate-fade-up-delay-1">
+          Your payment was cancelled. No charges were made.
+        </p>
+        <Link
+          href="/"
+          className="inline-block mt-6 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-medium rounded-xl text-sm transition-colors animate-fade-up-delay-2"
+        >
+          ← Back to SwiftLedger
+        </Link>
+        <p className="text-xs text-slate-500 mt-4 animate-fade-up-delay-3">
+          Redirecting in 5 seconds...
+        </p>
+      </div>
+    </main>
+  );
+}
+
+// ============================================================
+// 🔥 OUTER COMPONENT – Wraps with Suspense
+// ============================================================
+export default function PaymentCancel() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#030712] text-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 text-sm">Loading...</p>
+        </div>
+      </div>
+    }>
+      <PaymentCancelContent />
+    </Suspense>
+  );
+}
+</file>
+
+<file path="src/app/payment/success/page.tsx">
+'use client';
+
+import { Suspense } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+// ============================================================
+// 🔥 INNER COMPONENT – Uses useSearchParams
+// ============================================================
+function PaymentSuccessContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [countdown, setCountdown] = useState(5);
+
+  const pageCount = searchParams.get('pageCount');
+  const txCount = searchParams.get('txCount');
+  const file = searchParams.get('file');
+
+  // Auto-redirect to home after 5 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          router.push('/');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [router]);
+
+  return (
+    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        {/* Success Icon */}
+        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center animate-fade-up">
+          <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+
+        <h1 className="text-3xl font-bold text-white animate-fade-up">✅ Payment Successful!</h1>
+        <p className="text-slate-400 mt-3 animate-fade-up-delay-1">
+          Your payment was successful. You can now download your CSV.
+        </p>
+
+        <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl animate-fade-up-delay-2">
+          <p className="text-emerald-400 font-medium">
+            📄 {file || 'Your statement'} – {txCount || 0} transactions
+          </p>
+        </div>
+
+        <Link
+          href="/"
+          className="inline-block mt-6 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-medium rounded-xl text-sm transition-colors animate-fade-up-delay-3"
+        >
+          ← Back to SwiftLedger
+        </Link>
+
+        <p className="text-xs text-slate-500 mt-4 animate-fade-up-delay-4">
+          Redirecting in {countdown}s
+        </p>
+      </div>
+    </main>
+  );
+}
+
+// ============================================================
+// 🔥 OUTER COMPONENT – Wraps with Suspense
+// ============================================================
+export default function PaymentSuccess() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#030712] text-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 text-sm">Loading...</p>
+        </div>
+      </div>
+    }>
+      <PaymentSuccessContent />
+    </Suspense>
+  );
+}
+</file>
+
+<file path="package.json">
+{
+  "name": "document-parser",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@google/genai": "^2.17.1",
+    "@napi-rs/canvas": "^1.0.8",
+    "@supabase/supabase-js": "^2.112.3",
+    "@whop/checkout": "^0.6.0",
+    "formidable": "^3.5.4",
+    "next": "16.3.1",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^6.2.108",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
+</file>
+
 <file path="src/app/page.tsx">
 'use client';
 
@@ -1210,15 +1140,6 @@ function parseCurrency(value: string): number {
   return parseFloat(cleaned) || 0;
 }
 
-function getSignedAmount(row: Transaction): number {
-  const raw = parseCurrency(row.amount);
-  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order'];
-  if (raw > 0 && debitTypes.includes(row.type)) {
-    return -raw;
-  }
-  return raw;
-}
-
 function generateCSV(rows: Transaction[]): string {
   if (!rows.length) return '';
   const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
@@ -1239,7 +1160,7 @@ function generateXeroCSV(rows: Transaction[], bank: string = ''): string {
   const csvRows = rows.map((r) => [
     r.date,
     `${r.description} (${r.type})`,
-    getSignedAmount(r).toFixed(2),
+    parseCurrency(r.amount).toFixed(2),
     parseCurrency(r.balance).toFixed(2),
     bank || 'General',
   ]);
@@ -1287,7 +1208,7 @@ NEWFILEUID:NONE
 `;
   let ofxBody = '';
   rows.forEach((r, i) => {
-    const amount = getSignedAmount(r);
+    const amount = parseCurrency(r.amount);
     const isCredit = amount >= 0;
     const type = isCredit ? 'CREDIT' : 'DEBIT';
     const amtStr = Math.abs(amount).toFixed(2);
@@ -1322,7 +1243,7 @@ function generateQBO(rows: Transaction[], bank: string = ''): string {
 Dated\tDescription\tWithdrawal\tDeposit\tBalance
 `;
   rows.forEach((r) => {
-    const amount = getSignedAmount(r);
+    const amount = parseCurrency(r.amount);
     const isCredit = amount >= 0;
     const amtStr = Math.abs(amount).toFixed(2);
     const date = new Date(r.date);
@@ -1392,6 +1313,7 @@ export default function Home() {
     ofx: true,
     qbo: true,
   });
+  const [pendingDownload, setPendingDownload] = useState<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1412,6 +1334,18 @@ export default function Home() {
     ofx: { label: '🏦 .OFX', desc: 'Microsoft Money, Quicken', color: 'text-amber-400' },
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem('pendingDownload');
+    if (pending) {
+      try {
+        const data = JSON.parse(pending);
+        setPendingDownload(data);
+      } catch (e) {
+        console.error('Failed to parse pending download:', e);
+      }
+    }
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     const formData = new FormData();
@@ -1453,15 +1387,34 @@ export default function Home() {
         setCurrentPageCount(pageCount);
         const priceInfo = getPrice(pageCount);
 
+        // 🔥 DEBUG: Log the last 5 transactions
+        if (rows.length > 0) {
+          console.log('📊 Last 5 transactions:');
+          rows.slice(-5).forEach((tx: Transaction, i: number) => {
+            console.log(`  ${i+1}. ${tx.date} | ${tx.amount} | ${tx.balance}`);
+          });
+        }
+
+        // 🔥 CRITICAL: Use the balance FROM THE PDF
+        const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
+        const closingBalance = lastRow ? parseCurrency(lastRow.balance) : 0;
+
         let totalCredits = 0, totalDebits = 0;
         rows.forEach((tx: Transaction) => {
-          const amt = getSignedAmount(tx);
-          if (amt >= 0) totalCredits += amt;
-          else totalDebits += Math.abs(amt);
+          const amt = parseCurrency(tx.amount);
+          if (amt < 0) {
+            totalDebits += Math.abs(amt);
+          } else {
+            totalCredits += amt;
+          }
         });
+
         const dates = rows.map((tx: Transaction) => new Date(tx.date));
         const firstDate = dates.length ? dates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
         const lastDate = dates.length ? dates[dates.length - 1].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+        console.log('📊 Closing balance from PDF:', closingBalance);
+
         setStats({
           fileName: file.name,
           pageCount,
@@ -1472,7 +1425,7 @@ export default function Home() {
           badge: priceInfo.badge,
           totalCredits,
           totalDebits,
-          netBalance: totalCredits - totalDebits,
+          netBalance: closingBalance,
           firstDate,
           lastDate,
         });
@@ -1508,10 +1461,14 @@ export default function Home() {
     const priceInfo = getPrice(6);
     let totalCredits = 0, totalDebits = 0;
     SAMPLE_DEMO_DATA.forEach((tx) => {
-      const amt = getSignedAmount(tx);
-      if (amt >= 0) totalCredits += amt;
-      else totalDebits += Math.abs(amt);
+      const amt = parseCurrency(tx.amount);
+      if (amt < 0) {
+        totalDebits += Math.abs(amt);
+      } else {
+        totalCredits += amt;
+      }
     });
+    const lastRow = SAMPLE_DEMO_DATA[SAMPLE_DEMO_DATA.length - 1];
     setStats({
       fileName: 'sample_statement_demo.pdf',
       pageCount: 6,
@@ -1522,11 +1479,18 @@ export default function Home() {
       badge: priceInfo.badge,
       totalCredits,
       totalDebits,
-      netBalance: totalCredits - totalDebits,
+      netBalance: parseCurrency(lastRow.balance),
       firstDate: '1st November 2026',
       lastDate: '5th November 2026',
     });
     setShowStats(true);
+  };
+
+  const whopUrls: Record<string, string> = {
+    '5': 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',
+    '25': 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',
+    '45': 'https://whop.com/vercel-3f41/swiftledger-corporate-21-50-pages/',
+    '85': 'https://whop.com/vercel-3f41/swiftledger-enterprise-51-pages/',
   };
 
   const handlePayAndDownload = async () => {
@@ -1538,29 +1502,32 @@ export default function Home() {
       return;
     }
 
-    try {
-      const res = await fetch('/api/create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          price: stats.price,
-          pageCount: stats.pageCount,
-          transactionCount: stats.transactionCount,
-          fileName: fileName || 'statement',
-        }),
-      });
+    const checkoutUrl = whopUrls[stats.price.toString()];
 
-      const data = await res.json();
-
-      if (data.success && data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
-      } else {
-        alert('Something went wrong. Please try again.');
-      }
-    } catch (error) {
-      console.error('Checkout error:', error);
-      alert('Failed to create checkout. Please try again.');
+    if (!checkoutUrl) {
+      alert(`No checkout URL found for price $${stats.price}. Please contact support.`);
+      return;
     }
+
+    sessionStorage.setItem('pendingDownload', JSON.stringify({
+      rows: parsedData,
+      fileName: fileName || 'statement',
+      formats: formats,
+      bank: selectedBank,
+    }));
+
+    window.open(checkoutUrl, '_blank');
+    alert('🛒 Opening Whop checkout in a new tab. Complete payment there, then come back and click "Download" to get your CSV.');
+  };
+
+  const handleDownloadAfterPayment = () => {
+    if (!pendingDownload) return;
+    
+    const { rows, fileName, formats, bank } = pendingDownload;
+    downloadAllFormats(rows, fileName, formats, bank);
+    
+    sessionStorage.removeItem('pendingDownload');
+    setPendingDownload(null);
   };
 
   const toggleFormat = (format: string) => {
@@ -1690,6 +1657,23 @@ export default function Home() {
               </div>
               <span className="text-[10px] text-slate-500">{loadingTime}s elapsed</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDownload && (
+        <div className="w-full max-w-4xl mx-auto z-10 mt-4 animate-fade-up">
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-emerald-400 font-medium">✅ Payment detected!</p>
+              <p className="text-slate-400 text-sm">Your files are ready to download.</p>
+            </div>
+            <button
+              onClick={handleDownloadAfterPayment}
+              className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold rounded-xl text-sm shadow-[0_0_30px_rgba(16,185,129,0.15)] transition-all duration-300"
+            >
+              📥 Download {pendingDownload.formats?.length || 0} Formats
+            </button>
           </div>
         </div>
       )}
@@ -1842,216 +1826,401 @@ export default function Home() {
 }
 </file>
 
-<file path=".gitignore">
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+<file path="src/app/api/v1/parse/route.ts">
+import { NextResponse } from 'next/server';
+import { GoogleGenAI } from '@google/genai';
+import sharp from 'sharp';
+import { PDFDocument } from 'pdf-lib';
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
-# testing
-/coverage
+const GEMINI_MODELS = [
+  'gemini-3.5-flash-lite',
+];
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-</file>
-
-<file path="AGENTS.md">
-<!-- BEGIN:nextjs-agent-rules -->
-
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
-</file>
-
-<file path="CLAUDE.md">
-@AGENTS.md
-</file>
-
-<file path="eslint.config.mjs">
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
-
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
-]);
-
-export default eslintConfig;
-</file>
-
-<file path="next.config.ts">
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
-};
-
-export default nextConfig;
-</file>
-
-<file path="package.json">
-{
-  "name": "document-parser",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@google/genai": "^2.17.1",
-    "@supabase/supabase-js": "^2.112.3",
-    "formidable": "^3.5.4",
-    "next": "16.3.1",
-    "pdf-lib": "^1.17.1",
-    "pdf-parse": "^2.4.5",
-    "pdfjs-dist": "^6.2.108",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "sharp": "^0.35.3"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.1",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+function cleanAndParseJSON(rawResponse: string): any {
+  let clean = rawResponse.trim();
+  clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
+  try {
+    return JSON.parse(clean);
+  } catch {
+    const lastValidObjectIndex = clean.lastIndexOf('}');
+    if (lastValidObjectIndex !== -1) {
+      const salvaged = clean.substring(0, lastValidObjectIndex + 1) + ']}';
+      try {
+        return JSON.parse(salvaged);
+      } catch {
+        const salvagedArray = clean.substring(0, lastValidObjectIndex + 1) + ']';
+        return JSON.parse(salvagedArray);
+      }
+    }
+    throw new Error('Could not parse or salvage JSON output.');
   }
 }
-</file>
 
-<file path="postcss.config.mjs">
-const config = {
-  plugins: {
-    "@tailwindcss/postcss": {},
-  },
-};
+// ============================================================
+// 🔥 DETECT CORRUPTED PAGES (year ranges like "2020- 2021-")
+// ============================================================
+function isPageCorrupted(text: string): boolean {
+  const yearRangePattern = /\d{4}-\s+\d{4}-/;
+  const matches = text.match(yearRangePattern);
+  if (matches && matches.length > 0) {
+    const yearCount = (text.match(/\d{4}-\s+\d{4}-/g) || []).length;
+    return yearCount > 5;
+  }
+  return false;
+}
 
-export default config;
-</file>
-
-<file path="README.md">
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-</file>
-
-<file path="tsconfig.json">
-{
-  "compilerOptions": {
-    "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "react-jsx",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./src/*"]
+// ============================================================
+// 🔥 EXTRACT ONLY VALID PAGES FROM PDF
+// ============================================================
+async function extractValidPages(buffer: Buffer): Promise<Buffer> {
+  try {
+    const pdfParse = require('pdf-parse');
+    const fullText = await pdfParse(buffer);
+    
+    if (!fullText || !fullText.text) {
+      console.log('⚠️ Could not parse PDF text, using original PDF');
+      return buffer;
     }
-  },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    "**/*.mts"
-  ],
-  "exclude": ["node_modules"]
+    
+    const text = fullText.text;
+    const lines = text.split('\n');
+    const corruptedPages = new Set<number>();
+    let currentPage = 1;
+    let currentPageText = '';
+    
+    for (const line of lines) {
+      const pageMatch = line.match(/===== Page (\d+) =====/);
+      if (pageMatch) {
+        if (currentPageText && isPageCorrupted(currentPageText)) {
+          corruptedPages.add(currentPage);
+          console.log(`⚠️ Page ${currentPage} detected as corrupted (year ranges)`);
+        }
+        currentPage = parseInt(pageMatch[1], 10);
+        currentPageText = '';
+      } else {
+        currentPageText += line + '\n';
+      }
+    }
+    
+    if (currentPageText && isPageCorrupted(currentPageText)) {
+      corruptedPages.add(currentPage);
+      console.log(`⚠️ Page ${currentPage} detected as corrupted (year ranges)`);
+    }
+    
+    if (corruptedPages.size === 0) {
+      console.log('✅ No corrupted pages detected, using original PDF');
+      return buffer;
+    }
+    
+    const pdfDoc = await PDFDocument.load(buffer);
+    const totalPages = pdfDoc.getPageCount();
+    const validPageIndices: number[] = [];
+    
+    for (let i = 0; i < totalPages; i++) {
+      const pageNum = i + 1;
+      if (!corruptedPages.has(pageNum)) {
+        validPageIndices.push(i);
+      }
+    }
+    
+    if (validPageIndices.length === 0) {
+      console.log('⚠️ All pages detected as corrupted, using original PDF');
+      return buffer;
+    }
+    
+    const newDoc = await PDFDocument.create();
+    const pages = await newDoc.copyPages(pdfDoc, validPageIndices);
+    for (const page of pages) {
+      newDoc.addPage(page);
+    }
+    
+    const newPdfBytes = await newDoc.save();
+    // 🔥 FIX: Convert Uint8Array to Buffer properly
+    const newBuffer = Buffer.from(newPdfBytes.buffer, 0, newPdfBytes.byteLength);
+    
+    console.log(`✅ Created clean PDF: ${validPageIndices.length} valid pages (removed ${corruptedPages.size} corrupted pages)`);
+    return newBuffer;
+    
+  } catch (error) {
+    console.warn('⚠️ Page extraction failed, using original PDF:', error);
+    return buffer;
+  }
+}
+
+// ============================================================
+// 🔥 PDF PARSING FUNCTIONS
+// ============================================================
+async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
+  try {
+    // @ts-ignore
+    const pdfParse = require('pdf-parse');
+    const data = await pdfParse(buffer);
+    return data.numpages || 1;
+  } catch (error) {
+    console.warn('⚠️ pdf-parse failed:', error);
+    return null;
+  }
+}
+
+async function getPageCountPdfJs(buffer: Buffer): Promise<number | null> {
+  try {
+    try {
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      return pdf.numPages;
+    } catch {
+      const pdfjsLib = await import('pdfjs-dist');
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      return pdf.numPages;
+    }
+  } catch (error) {
+    console.warn('⚠️ pdfjs-dist failed:', error);
+    return null;
+  }
+}
+
+async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn('⚠️ No Gemini API key, using fallback 1');
+      return 1;
+    }
+    const base64Data = buffer.toString('base64');
+    const ai = new GoogleGenAI({ apiKey });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash-lite',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: 'How many pages does this PDF have? Reply only with a number, nothing else.' },
+            { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
+          ],
+        },
+      ],
+      config: {
+        maxOutputTokens: 10,
+        temperature: 0.0,
+      },
+    });
+
+    const count = parseInt(response.text || '1', 10);
+    return count > 0 ? count : 1;
+  } catch (error) {
+    console.warn('⚠️ Gemini Vision fallback failed:', error);
+    return 1;
+  }
+}
+
+async function getPDFPageCount(buffer: Buffer): Promise<number> {
+  const count1 = await getPageCountPdfParse(buffer);
+  if (count1 !== null && count1 > 0) {
+    console.log(`📄 pdf-parse: ${count1} pages`);
+    return count1;
+  }
+
+  const count2 = await getPageCountPdfJs(buffer);
+  if (count2 !== null && count2 > 0) {
+    console.log(`📄 pdfjs-dist: ${count2} pages`);
+    return count2;
+  }
+
+  console.log('⚠️ pdf-parse and pdfjs-dist failed. Using Gemini Vision fallback.');
+  const count3 = await getPageCountGeminiVision(buffer);
+  console.log(`📄 Gemini Vision: ${count3} pages`);
+  return count3;
+}
+
+async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
+  let lastError: any = null;
+  for (const modelName of GEMINI_MODELS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          ...requestPayload,
+          model: modelName,
+        });
+        return { response, modelUsed: modelName };
+      } catch (error: any) {
+        lastError = error;
+        const isHighDemandOrRateLimit =
+          error?.status === 429 ||
+          error?.status === 503 ||
+          String(error).includes('high demand') ||
+          String(error).includes('RESOURCE_EXHAUSTED');
+        if (isHighDemandOrRateLimit && attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        } else {
+          break;
+        }
+      }
+    }
+  }
+  throw lastError || new Error('All Gemini model endpoints failed.');
+}
+
+// ============================================================
+// 🔥 POST HANDLER – WITH CORRUPTION CLEANUP
+// ============================================================
+export async function POST(req: Request) {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'GEMINI_API_KEY is missing from .env.local.' },
+        { status: 500 }
+      );
+    }
+
+    const formData = await req.formData();
+    const file = formData.get('file') as File;
+    if (!file) {
+      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: 'File size exceeds 10MB limit.' },
+        { status: 400 }
+      );
+    }
+
+    const bytes = await file.arrayBuffer();
+    const rawBuffer = Buffer.from(bytes);
+
+    let processedBuffer: Buffer = rawBuffer;
+    let mimeType = file.type || '';
+    let pageCount = 1;
+
+    if (!mimeType) {
+      if (file.name.endsWith('.pdf')) mimeType = 'application/pdf';
+      else if (file.name.endsWith('.png')) mimeType = 'image/png';
+      else mimeType = 'image/jpeg';
+    }
+
+    // 🔥 Remove corrupted pages before processing
+    if (mimeType === 'application/pdf') {
+      try {
+        console.log('🔄 Attempting to clean corrupted pages...');
+        const cleanedBuffer = await extractValidPages(rawBuffer);
+        processedBuffer = cleanedBuffer;
+        console.log(`📄 Cleaned PDF size: ${processedBuffer.length} bytes`);
+      } catch (error) {
+        console.warn('⚠️ PDF cleaning warning:', error);
+        processedBuffer = rawBuffer;
+      }
+      
+      pageCount = await getPDFPageCount(processedBuffer);
+      console.log(`📄 Final page count: ${pageCount}`);
+    }
+
+    if (mimeType.startsWith('image/')) {
+      processedBuffer = await sharp(processedBuffer)
+        .rotate()
+        .resize({ width: 1200, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 75 })
+        .toBuffer();
+      mimeType = 'image/jpeg';
+    }
+
+    const base64Data = processedBuffer.toString('base64');
+    const ai = new GoogleGenAI({ apiKey });
+
+    const prompt = `You are a financial document parser. Extract ALL transactions from this bank statement.
+
+CRITICAL RULES:
+1. Extract EVERY transaction row. DO NOT skip any.
+2. EVERY transaction MUST include a "balance" field.
+3. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
+4. The balance is ALWAYS on the RIGHT side of the transaction row.
+5. The balance is ALWAYS a POSITIVE number with a currency symbol ($).
+6. DO NOT calculate the balance. USE the balance EXACTLY as shown on the statement.
+7. Continue extracting ALL transactions until you reach the end of the statement.
+
+THE SCHEMA:
+{
+  "transactions": [
+    {
+      "id": 1,
+      "date": "01/01/2026",
+      "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order | Wire | ACH | POS | Check | Fee",
+      "description": "Full description",
+      "amount": "$1,234.56",
+      "balance": "$157,100.00"
+    }
+  ]
+}
+
+RULES FOR AMOUNTS:
+- Parentheses "(1,476.44)" → "-$1,476.44"
+- Minus sign "-1,476.44" → "-$1,476.44"  
+- Positive "1,476.44" → "$1,476.44"
+
+EXAMPLES:
+- PDF shows: "PURCHASE ... $1,156.94 $144,073.91"
+  → amount: "$1,156.94", balance: "$144,073.91"
+- PDF shows: "(8,166.82) 189,136.05"  
+  → amount: "-$8,166.82", balance: "$189,136.05"
+
+OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
+
+    const { response, modelUsed } = await generateWithFallback(ai, {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            { inlineData: { data: base64Data, mimeType: mimeType } },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 16384,
+        temperature: 0.0,
+      },
+    });
+
+    const responseText = response.text || '{}';
+    const parsedData = cleanAndParseJSON(responseText);
+
+    const transactions = Array.isArray(parsedData)
+      ? parsedData
+      : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
+
+    if (transactions.length > 0) {
+      const last5 = transactions.slice(-5);
+      console.log('📊 Last 5 transactions:');
+      last5.forEach((tx: any, i: number) => {
+        console.log(`  ${i+1}. ${tx.date} | ${tx.amount} | ${tx.balance}`);
+      });
+    }
+
+    console.log(`✅ Returning ${transactions.length} transactions, page_count: ${pageCount}`);
+
+    return NextResponse.json({
+      success: true,
+      filename: file.name,
+      engine_used: `Gemini (${modelUsed})`,
+      total_transactions: transactions.length,
+      page_count: pageCount,
+      rows: transactions,
+    });
+  } catch (error: any) {
+    console.error('Parsing Error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error?.message || 'Parsing failed',
+        details: String(error),
+      },
+      { status: 500 }
+    );
+  }
 }
 </file>
 

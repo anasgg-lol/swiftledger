@@ -21,11 +21,23 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
   { id: 6, date: '5th November 2026', type: 'Direct Debit', description: 'Fitness Club Membership', amount: '-£32.50', balance: '£368.50' },
 ];
 
+// ✅ PASTE THIS FULLY BALANCED ACCOUNTING PARSER INSTEAD:
 function parseCurrency(value: string): number {
   if (!value) return 0;
-  const cleaned = value.replace(/[^0-9.-]/g, '');
-  return parseFloat(cleaned) || 0;
+  const trimmed = value.trim();
+  
+  // Intercept standard accounting parentheses negatives like (42,148.24)
+  const isParenthesisNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
+  
+  let cleaned = trimmed.replace(/[^0-9.-]/g, '');
+  let numericValue = parseFloat(cleaned) || 0;
+  
+  if (isParenthesisNegative) {
+    numericValue = -Math.abs(numericValue);
+  }
+  return numericValue;
 }
+
 
 function generateCSV(rows: Transaction[]): string {
   if (!rows.length) return '';

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import sharp from 'sharp';
-import { PDFDocument } from 'pdf-lib';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -30,102 +29,10 @@ function cleanAndParseJSON(rawResponse: string): any {
 }
 
 // ============================================================
-// 🔥 DETECT CORRUPTED PAGES (year ranges like "2020- 2021-")
-// ============================================================
-function isPageCorrupted(text: string): boolean {
-  const yearRangePattern = /\d{4}-\s+\d{4}-/;
-  const matches = text.match(yearRangePattern);
-  if (matches && matches.length > 0) {
-    const yearCount = (text.match(/\d{4}-\s+\d{4}-/g) || []).length;
-    return yearCount > 5;
-  }
-  return false;
-}
-
-// ============================================================
-// 🔥 EXTRACT ONLY VALID PAGES FROM PDF
-// ============================================================
-async function extractValidPages(buffer: Buffer): Promise<Buffer> {
-  try {
-    const pdfParse = require('pdf-parse');
-    const fullText = await pdfParse(buffer);
-    
-    if (!fullText || !fullText.text) {
-      console.log('⚠️ Could not parse PDF text, using original PDF');
-      return buffer;
-    }
-    
-    const text = fullText.text;
-    const lines = text.split('\n');
-    const corruptedPages = new Set<number>();
-    let currentPage = 1;
-    let currentPageText = '';
-    
-    for (const line of lines) {
-      const pageMatch = line.match(/===== Page (\d+) =====/);
-      if (pageMatch) {
-        if (currentPageText && isPageCorrupted(currentPageText)) {
-          corruptedPages.add(currentPage);
-          console.log(`⚠️ Page ${currentPage} detected as corrupted (year ranges)`);
-        }
-        currentPage = parseInt(pageMatch[1], 10);
-        currentPageText = '';
-      } else {
-        currentPageText += line + '\n';
-      }
-    }
-    
-    if (currentPageText && isPageCorrupted(currentPageText)) {
-      corruptedPages.add(currentPage);
-      console.log(`⚠️ Page ${currentPage} detected as corrupted (year ranges)`);
-    }
-    
-    if (corruptedPages.size === 0) {
-      console.log('✅ No corrupted pages detected, using original PDF');
-      return buffer;
-    }
-    
-    const pdfDoc = await PDFDocument.load(buffer);
-    const totalPages = pdfDoc.getPageCount();
-    const validPageIndices: number[] = [];
-    
-    for (let i = 0; i < totalPages; i++) {
-      const pageNum = i + 1;
-      if (!corruptedPages.has(pageNum)) {
-        validPageIndices.push(i);
-      }
-    }
-    
-    if (validPageIndices.length === 0) {
-      console.log('⚠️ All pages detected as corrupted, using original PDF');
-      return buffer;
-    }
-    
-    const newDoc = await PDFDocument.create();
-    const pages = await newDoc.copyPages(pdfDoc, validPageIndices);
-    for (const page of pages) {
-      newDoc.addPage(page);
-    }
-    
-    const newPdfBytes = await newDoc.save();
-    // 🔥 FIX: Convert Uint8Array to Buffer properly
-    const newBuffer = Buffer.from(newPdfBytes.buffer, 0, newPdfBytes.byteLength);
-    
-    console.log(`✅ Created clean PDF: ${validPageIndices.length} valid pages (removed ${corruptedPages.size} corrupted pages)`);
-    return newBuffer;
-    
-  } catch (error) {
-    console.warn('⚠️ Page extraction failed, using original PDF:', error);
-    return buffer;
-  }
-}
-
-// ============================================================
-// 🔥 PDF PARSING FUNCTIONS
+// 🔥 PDF PAGE COUNT MODULES
 // ============================================================
 async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
   try {
-    // @ts-ignore
     const pdfParse = require('pdf-parse');
     const data = await pdfParse(buffer);
     return data.numpages || 1;
@@ -155,10 +62,7 @@ async function getPageCountPdfJs(buffer: Buffer): Promise<number | null> {
 async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn('⚠️ No Gemini API key, using fallback 1');
-      return 1;
-    }
+    if (!apiKey) return 1;
     const base64Data = buffer.toString('base64');
     const ai = new GoogleGenAI({ apiKey });
 
@@ -173,36 +77,24 @@ async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
           ],
         },
       ],
-      config: {
-        maxOutputTokens: 10,
-        temperature: 0.0,
-      },
+      config: { maxOutputTokens: 10, temperature: 0.0 },
     });
 
     const count = parseInt(response.text || '1', 10);
     return count > 0 ? count : 1;
   } catch (error) {
-    console.warn('⚠️ Gemini Vision fallback failed:', error);
     return 1;
   }
 }
 
 async function getPDFPageCount(buffer: Buffer): Promise<number> {
   const count1 = await getPageCountPdfParse(buffer);
-  if (count1 !== null && count1 > 0) {
-    console.log(`📄 pdf-parse: ${count1} pages`);
-    return count1;
-  }
+  if (count1 !== null && count1 > 0) return count1;
 
   const count2 = await getPageCountPdfJs(buffer);
-  if (count2 !== null && count2 > 0) {
-    console.log(`📄 pdfjs-dist: ${count2} pages`);
-    return count2;
-  }
+  if (count2 !== null && count2 > 0) return count2;
 
-  console.log('⚠️ pdf-parse and pdfjs-dist failed. Using Gemini Vision fallback.');
   const count3 = await getPageCountGeminiVision(buffer);
-  console.log(`📄 Gemini Vision: ${count3} pages`);
   return count3;
 }
 
@@ -218,12 +110,7 @@ async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
         return { response, modelUsed: modelName };
       } catch (error: any) {
         lastError = error;
-        const isHighDemandOrRateLimit =
-          error?.status === 429 ||
-          error?.status === 503 ||
-          String(error).includes('high demand') ||
-          String(error).includes('RESOURCE_EXHAUSTED');
-        if (isHighDemandOrRateLimit && attempt < 2) {
+        if (error?.status === 429 && attempt < 2) {
           await new Promise((resolve) => setTimeout(resolve, 1200));
         } else {
           break;
@@ -235,16 +122,13 @@ async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
 }
 
 // ============================================================
-// 🔥 POST HANDLER – WITH CORRUPTION CLEANUP
+// 🔥 POST HANDLER
 // ============================================================
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        { error: 'GEMINI_API_KEY is missing from .env.local.' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
     }
 
     const formData = await req.formData();
@@ -254,16 +138,13 @@ export async function POST(req: Request) {
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        { error: 'File size exceeds 10MB limit.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'File size exceeds 10MB limit.' }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
     const rawBuffer = Buffer.from(bytes);
 
-    let processedBuffer: Buffer = rawBuffer;
+    let processedBuffer = rawBuffer;
     let mimeType = file.type || '';
     let pageCount = 1;
 
@@ -273,24 +154,12 @@ export async function POST(req: Request) {
       else mimeType = 'image/jpeg';
     }
 
-    // 🔥 Remove corrupted pages before processing
     if (mimeType === 'application/pdf') {
-      try {
-        console.log('🔄 Attempting to clean corrupted pages...');
-        const cleanedBuffer = await extractValidPages(rawBuffer);
-        processedBuffer = cleanedBuffer;
-        console.log(`📄 Cleaned PDF size: ${processedBuffer.length} bytes`);
-      } catch (error) {
-        console.warn('⚠️ PDF cleaning warning:', error);
-        processedBuffer = rawBuffer;
-      }
-      
-      pageCount = await getPDFPageCount(processedBuffer);
-      console.log(`📄 Final page count: ${pageCount}`);
+      pageCount = await getPDFPageCount(rawBuffer);
     }
 
     if (mimeType.startsWith('image/')) {
-      processedBuffer = await sharp(processedBuffer)
+      processedBuffer = await sharp(rawBuffer)
         .rotate()
         .resize({ width: 1200, fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 75 })
@@ -308,9 +177,8 @@ CRITICAL RULES:
 2. EVERY transaction MUST include a "balance" field.
 3. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
 4. The balance is ALWAYS on the RIGHT side of the transaction row.
-5. The balance is ALWAYS a POSITIVE number with a currency symbol ($).
-6. DO NOT calculate the balance. USE the balance EXACTLY as shown on the statement.
-7. Continue extracting ALL transactions until you reach the end of the statement.
+5. DO NOT calculate the balance. USE the balance EXACTLY as shown on the statement.
+6. Continue extracting ALL transactions until you reach the end of the statement.
 
 THE SCHEMA:
 {
@@ -330,12 +198,6 @@ RULES FOR AMOUNTS:
 - Parentheses "(1,476.44)" → "-$1,476.44"
 - Minus sign "-1,476.44" → "-$1,476.44"  
 - Positive "1,476.44" → "$1,476.44"
-
-EXAMPLES:
-- PDF shows: "PURCHASE ... $1,156.94 $144,073.91"
-  → amount: "$1,156.94", balance: "$144,073.91"
-- PDF shows: "(8,166.82) 189,136.05"  
-  → amount: "-$8,166.82", balance: "$189,136.05"
 
 OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
 
@@ -359,19 +221,7 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
     const responseText = response.text || '{}';
     const parsedData = cleanAndParseJSON(responseText);
 
-    const transactions = Array.isArray(parsedData)
-      ? parsedData
-      : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
-
-    if (transactions.length > 0) {
-      const last5 = transactions.slice(-5);
-      console.log('📊 Last 5 transactions:');
-      last5.forEach((tx: any, i: number) => {
-        console.log(`  ${i+1}. ${tx.date} | ${tx.amount} | ${tx.balance}`);
-      });
-    }
-
-    console.log(`✅ Returning ${transactions.length} transactions, page_count: ${pageCount}`);
+    const transactions = parsedData.transactions || parsedData.rows || parsedData || [];
 
     return NextResponse.json({
       success: true,
@@ -383,13 +233,6 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
     });
   } catch (error: any) {
     console.error('Parsing Error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error?.message || 'Parsing failed',
-        details: String(error),
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }
