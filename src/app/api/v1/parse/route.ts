@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import sharp from 'sharp';
+import { PDFDocument } from 'pdf-lib';
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite',
-];
+const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const GEMINI_MODELS = ['gemini-2.5-flash'];
 
 function cleanAndParseJSON(rawResponse: string): any {
   let clean = rawResponse.trim();
@@ -24,215 +22,114 @@ function cleanAndParseJSON(rawResponse: string): any {
         return JSON.parse(salvagedArray);
       }
     }
-    throw new Error('Could not parse or salvage JSON output.');
-  }
-}
-
-// ============================================================
-// 🔥 PDF PAGE COUNT MODULES
-// ============================================================
-async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
-  try {
-    const pdfParse = require('pdf-parse');
-    const data = await pdfParse(buffer);
-    return data.numpages || 1;
-  } catch (error) {
-    console.warn('⚠️ pdf-parse failed:', error);
-    return null;
-  }
-}
-
-async function getPageCountPdfJs(buffer: Buffer): Promise<number | null> {
-  try {
-    try {
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-      return pdf.numPages;
-    } catch {
-      const pdfjsLib = await import('pdfjs-dist');
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-      return pdf.numPages;
-    }
-  } catch (error) {
-    console.warn('⚠️ pdfjs-dist failed:', error);
-    return null;
-  }
-}
-
-async function getPageCountGeminiVision(buffer: Buffer): Promise<number> {
-  try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return 1;
-    const base64Data = buffer.toString('base64');
-    const ai = new GoogleGenAI({ apiKey });
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash-lite',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: 'How many pages does this PDF have? Reply only with a number, nothing else.' },
-            { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
-          ],
-        },
-      ],
-      config: { maxOutputTokens: 10, temperature: 0.0 },
-    });
-
-    const count = parseInt(response.text || '1', 10);
-    return count > 0 ? count : 1;
-  } catch (error) {
-    return 1;
+    return { transactions: [] };
   }
 }
 
 async function getPDFPageCount(buffer: Buffer): Promise<number> {
-  const count1 = await getPageCountPdfParse(buffer);
-  if (count1 !== null && count1 > 0) return count1;
-
-  const count2 = await getPageCountPdfJs(buffer);
-  if (count2 !== null && count2 > 0) return count2;
-
-  const count3 = await getPageCountGeminiVision(buffer);
-  return count3;
-}
-
-async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
-  let lastError: any = null;
-  for (const modelName of GEMINI_MODELS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          ...requestPayload,
-          model: modelName,
-        });
-        return { response, modelUsed: modelName };
-      } catch (error: any) {
-        lastError = error;
-        if (error?.status === 429 && attempt < 2) {
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-        } else {
-          break;
-        }
-      }
-    }
+  try {
+    const pdfDoc = await PDFDocument.load(buffer);
+    return pdfDoc.getPageCount();
+  } catch {
+    return 1;
   }
-  throw lastError || new Error('All Gemini model endpoints failed.');
 }
 
-// ============================================================
-// 🔥 POST HANDLER
-// ============================================================
+// Splits the main master PDF into compressed page array buffers for sequential parsing
+async function extractPageRange(srcDoc: PDFDocument, start: number, end: number): Promise<string> {
+  const newDoc = await PDFDocument.create();
+  const rangeIndices = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  const copiedPages = await newDoc.copyPages(srcDoc, rangeIndices);
+  copiedPages.forEach(page => newDoc.addPage(page));
+  const pdfBytes = await newDoc.save();
+  return Buffer.from(pdfBytes).toString('base64');
+}
+
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-    }
-
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json({ error: 'File size exceeds 10MB limit.' }, { status: 400 });
-    }
+    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
 
     const bytes = await file.arrayBuffer();
     const rawBuffer = Buffer.from(bytes);
+    let mimeType = file.type || 'application/pdf';
 
-    let processedBuffer = rawBuffer;
-    let mimeType = file.type || '';
-    let pageCount = 1;
-
-    if (!mimeType) {
-      if (file.name.endsWith('.pdf')) mimeType = 'application/pdf';
-      else if (file.name.endsWith('.png')) mimeType = 'image/png';
-      else mimeType = 'image/jpeg';
+    if (mimeType !== 'application/pdf') {
+      return NextResponse.json({ error: 'Multi-page pagination loops require PDF format.' }, { status: 400 });
     }
 
-    if (mimeType === 'application/pdf') {
-      pageCount = await getPDFPageCount(rawBuffer);
-    }
+    const srcDoc = await PDFDocument.load(rawBuffer);
+    const totalPages = srcDoc.getPageCount();
+    const chunkSize = 5; // Safe parsing bracket window to prevent token overflow
+    let masterTransactions: any[] = [];
 
-    if (mimeType.startsWith('image/')) {
-      processedBuffer = await sharp(rawBuffer)
-        .rotate()
-        .resize({ width: 1200, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 75 })
-        .toBuffer();
-      mimeType = 'image/jpeg';
-    }
-
-    const base64Data = processedBuffer.toString('base64');
     const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `You are a financial document parser. Extract ALL transactions from this bank statement.
+    console.log(`🚀 INITIALIZING SWIFTLEDGER CHUNKED PROCESSING: ${totalPages} TOTAL PAGES`);
 
-CRITICAL RULES:
-1. Extract EVERY transaction row. DO NOT skip any.
-2. EVERY transaction MUST include a "balance" field.
-3. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
-4. The balance is ALWAYS on the RIGHT side of the transaction row.
-5. DO NOT calculate the balance. USE the balance EXACTLY as shown on the statement.
-6. Continue extracting ALL transactions until you reach the end of the statement.
+    for (let i = 0; i < totalPages; i += chunkSize) {
+      const startPage = i;
+      const endPage = Math.min(i + chunkSize - 1, totalPages - 1);
+      
+      console.log(`📦 Processing segment array pages: ${startPage + 1} to ${endPage + 1}`);
+      const chunkBase64 = await extractPageRange(srcDoc, startPage, endPage);
 
-THE SCHEMA:
+      const prompt = `Extract ALL transaction rows from this bank statement page chunk. 
+DO NOT skip rows. Read the running balance directly from the right column of each row exactly as printed.
+
+RETURN SCHEMA:
 {
   "transactions": [
     {
       "id": 1,
-      "date": "01/01/2026",
-      "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order | Wire | ACH | POS | Check | Fee",
-      "description": "Full description",
-      "amount": "$1,234.56",
-      "balance": "$157,100.00"
+      "date": "Date",
+      "type": "Card Payment | Wire | ACH | Direct Debit",
+      "description": "Row description particulars",
+      "amount": "$Amount",
+      "balance": "$RunningBalance"
     }
   ]
-}
+}`;
 
-RULES FOR AMOUNTS:
-- Parentheses "(1,476.44)" → "-$1,476.44"
-- Minus sign "-1,476.44" → "-$1,476.44"  
-- Positive "1,476.44" → "$1,476.44"
-
-OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
-
-    const { response, modelUsed } = await generateWithFallback(ai, {
-      contents: [
-        {
-          role: 'user',
-          parts: [
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [
             { text: prompt },
-            { inlineData: { data: base64Data, mimeType: mimeType } },
+            { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
           ],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 16384,
-        temperature: 0.0,
-      },
-    });
+          config: { responseMimeType: 'application/json', temperature: 0.0 }
+        });
 
-    const responseText = response.text || '{}';
-    const parsedData = cleanAndParseJSON(responseText);
+        const chunkData = cleanAndParseJSON(response.text || '{}');
+        const txs = chunkData.transactions || chunkData.rows || chunkData || [];
+        masterTransactions = masterTransactions.concat(txs);
+      } catch (err) {
+        console.warn(`⚠️ Segment block ${startPage + 1} failed, dropping parameters:`, err);
+      }
+    }
 
-    const transactions = parsedData.transactions || parsedData.rows || parsedData || [];
+    // Re-index all processed IDs sequentially for clean frontend sorting grids
+    const finalizedRows = masterTransactions.map((tx, index) => ({
+      ...tx,
+      id: index + 1
+    }));
+
+    console.log(`✅ COMPLETE: Extracted ${finalizedRows.length} total rows across ${totalPages} pages.`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: `Gemini (${modelUsed})`,
-      total_transactions: transactions.length,
-      page_count: pageCount,
-      rows: transactions,
+      engine_used: 'Gemini 2.5 Chunked Engine',
+      total_transactions: finalizedRows.length,
+      page_count: totalPages,
+      rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('Parsing Error:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }
