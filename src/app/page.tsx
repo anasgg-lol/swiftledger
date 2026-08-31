@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Footer from './components/Footer';
-import WhopCheckoutModal from './components/WhopCheckoutModal';
 
 interface Transaction {
   id: number;
@@ -211,25 +210,9 @@ export default function Home() {
     qbo: true,
   });
 
-  // 🔥 NEW: Checkout modal state
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [checkoutProductId, setCheckoutProductId] = useState('');
-  // 🔥 DEBUG: Log your product IDs
-  console.log('🔍 Product IDs from env:', {
-    starter: process.env.WHOP_PRODUCT_ID_STARTER,
-    business: process.env.WHOP_PRODUCT_ID_BUSINESS,
-    corporate: process.env.WHOP_PRODUCT_ID_CORPORATE,
-    enterprise: process.env.WHOP_PRODUCT_ID_ENTERPRISE,
-  });
-  // 🔥 Map price to Whop Product ID
-  // 🔥 HARDCODED PRODUCT IDs (Replace with YOUR actual Whop IDs)
-  const productIdMap: Record<string, string> = {
-    '5': 'prod_E4LqwHMSpsAeA', // 🔥 Your Starter product ID
-    '25': 'prod_yW6DIDkhdrFLf', // 🔥 Your Business product ID (replace)
-    '45': 'prod_IBoJWlU1a6NJC', // 🔥 Your Corporate product ID (replace)
-    '85': 'prod_eHSxJk0SRhKJ8', // 🔥 Your Enterprise product ID (replace)
-  };
-  console.log('🔍 Product IDs hardcoded:', productIdMap);
+  // 🔥 Pending download state
+  const [pendingDownload, setPendingDownload] = useState<any>(null);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -249,6 +232,19 @@ export default function Home() {
     ofx: { label: '🏦 .OFX', desc: 'Microsoft Money, Quicken', color: 'text-amber-400' },
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
+
+  // 🔥 Check for pending download on page load
+  useEffect(() => {
+    const pending = sessionStorage.getItem('pendingDownload');
+    if (pending) {
+      try {
+        const data = JSON.parse(pending);
+        setPendingDownload(data);
+      } catch (e) {
+        console.error('Failed to parse pending download:', e);
+      }
+    }
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     const formData = new FormData();
@@ -366,7 +362,15 @@ export default function Home() {
     setShowStats(true);
   };
 
-  // 🔥 Handle payment + download
+  // 🔥 WHOP PRODUCT URLs (Replace with YOUR actual Whop product page URLs)
+  const whopUrls: Record<string, string> = {
+    '5': 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',
+    '25': 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',
+    '45': 'https://whop.com/vercel-3f41/swiftledger-corporate-21-50-pages/',
+    '85': 'https://whop.com/vercel-3f41/swiftledger-enterprise-51-pages/',
+  };
+
+  // 🔥 Handle payment + redirect to Whop
   const handlePayAndDownload = async () => {
     if (!stats) return;
 
@@ -376,14 +380,13 @@ export default function Home() {
       return;
     }
 
-    const productId = productIdMap[stats.price.toString()];
-    console.log('🔍 Price:', stats.price);
-    console.log('🔍 Product ID found:', productId);
-    if (!productId) {
-      alert('No product found for this price tier. Please contact support.');
+    const checkoutUrl = whopUrls[stats.price.toString()];
+
+    if (!checkoutUrl) {
+      alert(`No checkout URL found for price $${stats.price}. Please contact support.`);
       return;
     }
-    
+
     // Store file data in sessionStorage for after payment
     sessionStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
@@ -392,27 +395,22 @@ export default function Home() {
       bank: selectedBank,
     }));
 
-    setCheckoutProductId(productId);
-    setIsCheckoutOpen(true);
+    // 🔥 Open Whop in new tab
+    window.open(checkoutUrl, '_blank');
+    
+    // 🔥 Show message
+    alert('🛒 Opening Whop checkout in a new tab. Complete payment there, then come back and click "Download" to get your CSV.');
   };
 
-  // 🔥 Handle successful payment
-  const handlePaymentSuccess = () => {
-    const pending = sessionStorage.getItem('pendingDownload');
-    if (pending) {
-      try {
-        const data = JSON.parse(pending);
-        downloadAllFormats(data.rows, data.fileName, data.formats, data.bank);
-        sessionStorage.removeItem('pendingDownload');
-        
-        setShowStats(false);
-        setParsedData([]);
-        setFileName('');
-      } catch (error) {
-        console.error('Download error:', error);
-        alert('Failed to download your files. Please try again.');
-      }
-    }
+  // 🔥 Handle download after payment
+  const handleDownloadAfterPayment = () => {
+    if (!pendingDownload) return;
+    
+    const { rows, fileName, formats, bank } = pendingDownload;
+    downloadAllFormats(rows, fileName, formats, bank);
+    
+    sessionStorage.removeItem('pendingDownload');
+    setPendingDownload(null);
   };
 
   const toggleFormat = (format: string) => {
@@ -547,6 +545,24 @@ export default function Home() {
               </div>
               <span className="text-[10px] text-slate-500">{loadingTime}s elapsed</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== PENDING DOWNLOAD BUTTON ===== */}
+      {pendingDownload && (
+        <div className="w-full max-w-4xl mx-auto z-10 mt-4 animate-fade-up">
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-emerald-400 font-medium">✅ Payment detected!</p>
+              <p className="text-slate-400 text-sm">Your files are ready to download.</p>
+            </div>
+            <button
+              onClick={handleDownloadAfterPayment}
+              className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold rounded-xl text-sm shadow-[0_0_30px_rgba(16,185,129,0.15)] transition-all duration-300"
+            >
+              📥 Download {pendingDownload.formats?.length || 0} Formats
+            </button>
           </div>
         </div>
       )}
@@ -692,19 +708,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      {/* ===== WHOP CHECKOUT MODAL ===== */}
-      <WhopCheckoutModal
-        isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        productId={checkoutProductId}
-        onSuccess={handlePaymentSuccess}
-        metadata={{
-          page_count: stats?.pageCount || 0,
-          transaction_count: stats?.transactionCount || 0,
-          file_name: fileName || 'statement',
-        }}
-      />
 
       <div className="w-full max-w-6xl mx-auto mt-16 z-10">
         <Footer />
