@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import sharp from 'sharp';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
 const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
