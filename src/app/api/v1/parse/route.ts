@@ -60,8 +60,8 @@ export async function POST(req: Request) {
     const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
     
-    // Optimized concurrent sharding bracket size
-    const chunkSize = 15; 
+    // 💡 Upgrading chunk window to 45 splits an 89-page document into just 2 super-fast pieces!
+    const chunkSize = 45; 
     const chunks: { start: number; end: number }[] = [];
 
     for (let i = 0; i < totalPages; i += chunkSize) {
@@ -72,9 +72,8 @@ export async function POST(req: Request) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    console.log(`🚀 SWIFTLEDGER CONCURRENT ENGINE: FLYING ${chunks.length} PARALLEL ASYNC STREAM LINES...`);
+    console.log(`🚀 SWIFTLEDGER CONCURRENT ENGINE: FLYING ${chunks.length} BATCHES IN PARALLEL...`);
 
-    // 🔥 EXECUTE UNIFIED PARALLEL CONCURRENCY (CRUSHES RUNTIME BY 60%+)
     const chunkPromises = chunks.map(async (chunk) => {
       const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
       const prompt = `You are a financial document parser. Extract ALL transaction rows from this bank statement chunk.
@@ -112,7 +111,6 @@ RETURN SCHEMA:
       return chunkData.transactions || chunkData.rows || chunkData || [];
     });
 
-    // Resolve all multi-threaded network layers concurrently
     const resolvedSegments = await Promise.all(chunkPromises);
     let masterTransactions: any[] = [];
     
