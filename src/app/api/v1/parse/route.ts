@@ -193,47 +193,42 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey });
 
     // ============================================================
-    // 🔥 ULTIMATE PROMPT – FORCES CORRECT BALANCE EXTRACTION
+    // 🔥 IMPROVED PROMPT WITH MAX TOKENS
     // ============================================================
     const prompt = `You are a financial document parser. Extract ALL transactions from this bank statement.
 
-CRITICAL RULES FOR THE "balance" FIELD:
-1. EVERY transaction MUST include a "balance" field.
-2. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
-3. The balance is ALWAYS on the RIGHT side of the transaction row.
-4. The balance is ALWAYS a POSITIVE number (no parentheses, no minus sign).
-5. The balance MUST include the currency symbol ($, £, €, etc.).
+CRITICAL RULES:
+1. Extract EVERY transaction row. DO NOT skip any. Include ALL rows from ALL pages.
+2. EVERY transaction MUST include a "balance" field.
+3. The "balance" is the RUNNING ACCOUNT BALANCE shown AFTER each transaction.
+4. The balance is ALWAYS on the RIGHT side of the transaction row.
+5. The balance is ALWAYS a POSITIVE number with a currency symbol ($).
 6. DO NOT calculate the balance. USE the balance EXACTLY as shown on the statement.
-7. If the statement shows "194,862.29" as the balance, output "$194,862.29".
+7. Continue extracting ALL transactions until you reach the end of the statement.
 
-CRITICAL RULES FOR THE "amount" FIELD:
-1. If the PDF shows parentheses like "(1,476.44)", it's a DEBIT → output "-$1,476.44"
-2. If the PDF shows a minus sign like "-1,476.44", it's a DEBIT → output "-$1,476.44"
-3. If the PDF shows a positive number like "1,476.44", it's a CREDIT → output "$1,476.44"
-4. Look at the description to know if it's money in or money out.
-
-THE EXACT SCHEMA:
+THE SCHEMA:
 {
   "transactions": [
     {
       "id": 1,
       "date": "01/01/2026",
       "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order | Wire | ACH | POS | Check | Fee",
-      "description": "Full transaction description",
+      "description": "Full description",
       "amount": "$1,234.56",
       "balance": "$157,100.00"
     }
   ]
 }
 
-EXAMPLES OF CORRECT EXTRACTION:
+RULES FOR AMOUNTS:
+- Parentheses "(1,476.44)" → "-$1,476.44"
+- Minus sign "-1,476.44" → "-$1,476.44"  
+- Positive "1,476.44" → "$1,476.44"
+
+EXAMPLES:
 - PDF shows: "PURCHASE ... $1,156.94 $144,073.91"
   → amount: "$1,156.94", balance: "$144,073.91"
-  
-- PDF shows: "PAYROLL ... $5,021.23 $155,356.46"
-  → amount: "$5,021.23", balance: "$155,356.46"
-  
-- PDF shows: "(8,166.82) 189,136.05"
+- PDF shows: "(8,166.82) 189,136.05"  
   → amount: "-$8,166.82", balance: "$189,136.05"
 
 OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
@@ -250,7 +245,7 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
       ],
       config: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 8192,
+        maxOutputTokens: 16384, // 🔥 MAX TOKENS
         temperature: 0.0,
       },
     });
@@ -261,6 +256,15 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
     const transactions = Array.isArray(parsedData)
       ? parsedData
       : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
+
+    // 🔥 DEBUG: Log last 5 transactions
+    if (transactions.length > 0) {
+      const last5 = transactions.slice(-5);
+      console.log('📊 Last 5 transactions:');
+      last5.forEach((tx: any, i: number) => {
+        console.log(`  ${i+1}. ${tx.date} | ${tx.amount} | ${tx.balance}`);
+      });
+    }
 
     console.log(`✅ Returning ${transactions.length} transactions, page_count: ${pageCount}`);
 

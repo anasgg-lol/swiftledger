@@ -21,18 +21,12 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
   { id: 6, date: '5th November 2026', type: 'Direct Debit', description: 'Fitness Club Membership', amount: '-£32.50', balance: '£368.50' },
 ];
 
-// ============================================================
-// 🔥 SIMPLIFIED CURRENCY PARSING
-// ============================================================
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const cleaned = value.replace(/[^0-9.-]/g, '');
   return parseFloat(cleaned) || 0;
 }
 
-// ============================================================
-// 🔥 EXPORT GENERATORS
-// ============================================================
 function generateCSV(rows: Transaction[]): string {
   if (!rows.length) return '';
   const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
@@ -280,14 +274,18 @@ export default function Home() {
         setCurrentPageCount(pageCount);
         const priceInfo = getPrice(pageCount);
 
-        // 🔥 CRITICAL: Use the balance FROM THE PDF, don't calculate it
-        const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
-        const firstRow = rows.length > 0 ? rows[0] : null;
-        
-        const closingBalance = lastRow ? parseCurrency(lastRow.balance) : 0;
-        const openingBalance = firstRow ? parseCurrency(firstRow.balance) : 0;
+        // 🔥 DEBUG: Log the last 5 transactions
+        if (rows.length > 0) {
+          console.log('📊 Last 5 transactions:');
+          rows.slice(-5).forEach((tx: Transaction, i: number) => {
+            console.log(`  ${i+1}. ${tx.date} | ${tx.amount} | ${tx.balance}`);
+          });
+        }
 
-        // Calculate totals for display only
+        // 🔥 CRITICAL: Use the balance FROM THE PDF
+        const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
+        const closingBalance = lastRow ? parseCurrency(lastRow.balance) : 0;
+
         let totalCredits = 0, totalDebits = 0;
         rows.forEach((tx: Transaction) => {
           const amt = parseCurrency(tx.amount);
@@ -302,6 +300,8 @@ export default function Home() {
         const firstDate = dates.length ? dates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
         const lastDate = dates.length ? dates[dates.length - 1].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
+        console.log('📊 Closing balance from PDF:', closingBalance);
+
         setStats({
           fileName: file.name,
           pageCount,
@@ -312,9 +312,7 @@ export default function Home() {
           badge: priceInfo.badge,
           totalCredits,
           totalDebits,
-          netBalance: closingBalance, // 🔥 Use the actual balance from PDF
-          openingBalance: openingBalance,
-          closingBalance: closingBalance,
+          netBalance: closingBalance,
           firstDate,
           lastDate,
         });
@@ -369,8 +367,6 @@ export default function Home() {
       totalCredits,
       totalDebits,
       netBalance: parseCurrency(lastRow.balance),
-      openingBalance: parseCurrency(SAMPLE_DEMO_DATA[0].balance),
-      closingBalance: parseCurrency(lastRow.balance),
       firstDate: '1st November 2026',
       lastDate: '5th November 2026',
     });
