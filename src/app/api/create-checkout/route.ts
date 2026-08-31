@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 
-// 🔥 THIS IS THE CORRECT WHOP API ENDPOINT
+// 🔥 CORRECT: v1/checkout_links (with underscore)
 const WHOP_API_URL = 'https://api.whop.com/v1';
 
 export async function POST(req: Request) {
   try {
     const { price, pageCount, transactionCount, fileName } = await req.json();
 
-    // Map price to product ID
     const productMap: Record<string, string> = {
       '5': process.env.WHOP_PRODUCT_ID_STARTER || '',
       '25': process.env.WHOP_PRODUCT_ID_BUSINESS || '',
@@ -29,8 +28,8 @@ export async function POST(req: Request) {
 
     console.log('🔍 Creating Whop checkout with product ID:', productId);
 
-    // 🔥 THIS IS THE API CALL – IT USES /v1/checkouts
-    const response = await fetch(`${WHOP_API_URL}/checkouts`, {
+    // 🔥 TRY: /v1/checkout_links (with underscore)
+    const response = await fetch(`${WHOP_API_URL}/checkout_links`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -61,7 +60,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const checkoutUrl = data?.data?.url;
+    const checkoutUrl = data?.data?.url || data?.url;
 
     if (!checkoutUrl) {
       console.error('❌ No checkout URL in response:', data);
