@@ -59,64 +59,77 @@ export async function POST(req: Request) {
 
     const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
-    
-    // 💡 Upgrading chunk window to 45 splits an 89-page document into just 2 super-fast pieces!
-    const chunkSize = 45; 
-    const chunks: { start: number; end: number }[] = [];
 
-    for (let i = 0; i < totalPages; i += chunkSize) {
-      chunks.push({
-        start: i,
-        end: Math.min(i + chunkSize - 1, totalPages - 1)
-      });
+    // ⚡ STEP 1: FAST LOCAL EXTAL PULL ATTEMPT (COMPLETES IN MILLISECONDS)
+    let localTextContent = '';
+    try {
+      const pdfParse = require('pdf-parse');
+      const parsed = await pdfParse(rawBuffer);
+      localTextContent = parsed.text || '';
+    } catch (e) {
+      console.warn('⚠️ Local text pull failed, using fallback.');
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    console.log(`🚀 SWIFTLEDGER CONCURRENT ENGINE: FLYING ${chunks.length} BATCHES IN PARALLEL...`);
+    let masterTransactions: any[] = [];
 
-    const chunkPromises = chunks.map(async (chunk) => {
-      const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
-      const prompt = `You are a financial document parser. Extract ALL transaction rows from this bank statement chunk.
+    // If text layers exist, pass the raw text tokens directly to cut image execution delays entirely
+    if (localTextContent.trim().length > 50) {
+      console.log('⚡ DIGITAL PDF DETECTED: RUNNING INSTANT TEXT TOKEN MATRIX...');
       
-CRITICAL ACCURACY LAWS:
-1. Extract EVERY single transaction row printed. DO NOT skip or summarize any rows.
-2. Read the running balance directly from the right-hand side of each transaction row exactly as printed. DO NOT calculate balances.
-3. Hard-enforcement for debits: if an amount represents a withdrawal, charge, or negative value (indicated by brackets like "(42,148.24)" or a minus sign "-42,148.24"), you MUST output it with an explicit minus sign prefixed to the string, like "-$42,148.24".
+      const textPrompt = `You are a financial spreadsheet architect. Convert this raw bank statement text dump into a structured JSON array.
+      Extract EVERY single row. Do not truncate. Read the balance directly from the row.
+      Withdrawals/debits MUST be prefixed with a minus sign like "-$42,148.24".
 
-RETURN SCHEMA:
-{
-  "transactions": [
-    {
-      "id": 1,
-      "date": "Date",
-      "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
-      "description": "Row description particulars",
-      "amount": "-$42,148.24",
-      "balance": "$157,100.00"
-    }
-  ]
-}`;
+      DATA DUMP:
+      ${localTextContent}
+
+      RETURN SCHEMA:
+      { "transactions": [{ "id": 1, "date": "Date", "type": "Type", "description": "Details", "amount": "-$42,148.24", "balance": "$157,100.00" }] }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: [
-          { text: prompt },
-          { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
-        ],
+        model: 'gemini-2.5-flash', // Fast structural text extraction model
+        contents: [{ text: textPrompt }],
         config: { responseMimeType: 'application/json', temperature: 0.0 }
       });
 
-      const chunkText = response.text || '{}';
-      const chunkData = cleanAndParseJSON(chunkText);
-      return chunkData.transactions || chunkData.rows || chunkData || [];
-    });
+      const parsedData = cleanAndParseJSON(response.text || '{}');
+      masterTransactions = parsedData.transactions || parsedData.rows || parsedData || [];
+    } else {
+      // 📸 FALLBACK STEP 2: CONCURRENT IMAGE SHARDING BRACKET FOR SCANS
+      console.log('📸 SCANNED PDF DETECTED: INITIALIZING PARALLEL VISUAL CHUNKS...');
+      const chunkSize = 15; 
+      const chunks: { start: number; end: number }[] = [];
 
-    const resolvedSegments = await Promise.all(chunkPromises);
-    let masterTransactions: any[] = [];
-    
-    for (const segment of resolvedSegments) {
-      if (Array.isArray(segment)) {
-        masterTransactions = masterTransactions.concat(segment);
+      for (let i = 0; i < totalPages; i += chunkSize) {
+        chunks.push({ start: i, end: Math.min(i + chunkSize - 1, totalPages - 1) });
+      }
+
+      const chunkPromises = chunks.map(async (chunk) => {
+        const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
+        const visualPrompt = `Extract ALL transaction rows from this bank statement chunk.
+        Withdrawals/debits MUST be prefixed with a minus sign like "-$42,148.24".
+        Read the balance column exactly as printed. Do not calculate.
+        
+        RETURN SCHEMA:
+        { "transactions": [{ "id": 1, "date": "Date", "type": "Type", "description": "Details", "amount": "-$42,148.24", "balance": "$157,100.00" }] }`;
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [
+            { text: visualPrompt },
+            { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
+          ],
+          config: { responseMimeType: 'application/json', temperature: 0.0 }
+        });
+
+        const chunkData = cleanAndParseJSON(response.text || '{}');
+        return chunkData.transactions || chunkData.rows || chunkData || [];
+      });
+
+      const resolvedSegments = await Promise.all(chunkPromises);
+      for (const segment of resolvedSegments) {
+        if (Array.isArray(segment)) masterTransactions = masterTransactions.concat(segment);
       }
     }
 
@@ -125,18 +138,16 @@ RETURN SCHEMA:
       id: index + 1
     }));
 
-    console.log(`✅ CONCURRENT RUNTIME SUCCESS: Extracted ${finalizedRows.length} total rows.`);
-
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Gemini 3.6 Concurrent Stream',
+      engine_used: 'SwiftLedger Gemini Hybrid Core',
       total_transactions: finalizedRows.length,
       page_count: totalPages,
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('Concurrent Parser Exception:', error);
+    console.error('System exception caught:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }
