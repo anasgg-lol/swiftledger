@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
 import { PDFDocument } from 'pdf-lib';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 // ============ GET PAGE COUNT ============
 async function getPDFPageCount(buffer: Buffer): Promise<number> {
@@ -49,10 +49,16 @@ export async function POST(req: Request) {
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) {
-      return NextResponse.json({ success: false, error: 'No file uploaded' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'No file uploaded' },
+        { status: 400 }
+      );
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json({ success: false, error: 'File exceeds 10MB' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'File exceeds 10MB' },
+        { status: 400 }
+      );
     }
 
     const bytes = await file.arrayBuffer();
@@ -70,66 +76,57 @@ export async function POST(req: Request) {
       pageCount = await getPDFPageCount(rawBuffer);
     }
 
-    const ai = new GoogleGenAI({ apiKey });
     const base64Data = rawBuffer.toString('base64');
 
-    // 🔥 MODEL LIST – STABLE & FAST
-    const models = [
-      'gemini-1.5-flash',        // Fastest stable
-      'gemini-1.5-flash-lite',    // Even faster
-      'gemini-1.5-pro',           // Fallback
-    ];
+    // 🔥 SHORT PROMPT
+    const prompt = `Extract ALL financial transactions into JSON array: [{"id":1,"date":"date","type":"Card Payment|Direct Debit|Bank Credit|Cashpoint|Standing Order","description":"desc","amount":"$10.00","balance":"$500.00"}]`;
 
-    const prompt = 'Extract all financial transactions as JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}';
-
-    let result = null;
-    let modelUsed = '';
-
-    for (const model of models) {
-      try {
-        console.log(`🔄 Trying model: ${model}`);
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inlineData: { data: base64Data, mimeType: mimeType } }
-              ]
-            }
-          ],
-          config: {
-            responseMimeType: 'application/json',
-            maxOutputTokens: 2048,
-            temperature: 0,
+    // 🔥 DIRECT API CALL – NO SDK
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data,
+                },
+              },
+            ],
           },
-        });
-        result = response;
-        modelUsed = model;
-        console.log(`✅ Success with model: ${model}`);
-        break;
-      } catch (error: any) {
-        console.warn(`⚠️ Model ${model} failed:`, error.message || error);
-        // Continue to next model
-      }
-    }
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 4096,
+          temperature: 0,
+        },
+      }),
+    });
 
-    if (!result) {
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Gemini API error:', errorText);
       return NextResponse.json(
-        { success: false, error: 'All Gemini models failed. Check API key.' },
-        { status: 500 }
+        { success: false, error: `Gemini API error: ${response.status}` },
+        { status: response.status }
       );
     }
 
-    const text = result.text || '[]';
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const rows = cleanAndParseJSON(text);
     const transactions = Array.isArray(rows) ? rows : rows.transactions || rows.rows || [];
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: modelUsed,
       total_transactions: transactions.length,
       page_count: pageCount,
       rows: transactions,
