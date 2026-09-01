@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent';
 
 export async function POST(req: Request) {
   try {
@@ -38,38 +38,48 @@ export async function POST(req: Request) {
 
     console.log('📁 File:', file.name, file.size);
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-
-    // 🔥 USE gemini-pro – ALWAYS AVAILABLE
-    const modelName = 'gemini-pro';
-    console.log(`🔄 Using model: ${modelName}`);
-    const model = genAI.getGenerativeModel({ model: modelName });
-
     const prompt = `Extract ALL financial transactions into JSON array. Each object: {"id":1,"date":"date","type":"Card Payment|Direct Debit|Bank Credit|Cashpoint|Standing Order","description":"desc","amount":"$10.00","balance":"$500.00"}`;
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: base64Data,
-              },
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 4096,
-        temperature: 0.1,
+    // 🔥 DIRECT FETCH TO GEMINI API
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: 'application/pdf',
+                  data: base64Data,
+                },
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 4096,
+          temperature: 0.1,
+        },
+      }),
     });
 
-    const text = result.response.text() || '[]';
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Gemini API error:', errorText);
+      return NextResponse.json(
+        { success: false, error: `Gemini API: ${response.status} ${errorText}` },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     console.log('📥 Response length:', text.length);
 
     let parsedData;
