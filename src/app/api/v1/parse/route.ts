@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { PDFDocument } from 'pdf-lib';
 
-const pdfParse = require('pdf-parse');
+
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 const CONCURRENCY = 8; // parallel Gemini fallback calls in-flight at once
@@ -290,8 +290,8 @@ export async function POST(req: Request) {
       const { base64, buffer } = await buildPageChunk(srcDoc, p, p);
       let text = '';
       try {
-        
-        const parsed = await pdfParse(buffer);
+        const dynamicPdfParse = require('pdf-parse');
+        const parsed = await dynamicPdfParse(rawBuffer);
         text = parsed.text || '';
       } catch {
         // no embedded text layer — scanned page, will need Gemini vision
