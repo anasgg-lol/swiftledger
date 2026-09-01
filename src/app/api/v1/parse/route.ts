@@ -1,51 +1,150 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { PDFDocument } from 'pdf-lib';
 
 export const config = {
   api: {
-    bodyParser: true, 
+    bodyParser: true,
   },
 };
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const PAGE_CHUNK_SIZE = 6;      // pages per Gemini call — small enough that output truncation basically can't happen
+const CONCURRENCY = 5;          // parallel Gemini calls in-flight at once — tune against your Gemini tier's RPM limit
 
-// High-speed textual table parser that structures column matrices in milliseconds on the server
-function parseTextToJSON(text: string): any[] {
-  const transactions: any[] = [];
-  try {
-    const lines = text.split('\n');
-    let currentId = 1;
-    
-    for (const line of lines) {
-      if (!line.includes('|')) continue;
-      const parts = line.split('|').map(p => p.trim());
-      if (parts.length < 5) continue;
-      
-      transactions.push({
-        id: currentId++,
-        date: parts[0] || '',
-        type: parts[1] || 'Transaction',
-        description: parts[2] || '',
-        amount: parts[3] || '$0.00',
-        balance: parts[4] || '$0.00'
-      });
-    }
-    return transactions;
-  } catch {
-    return [];
+// Strict schema — the model CANNOT return malformed rows, missing fields, or free text.
+// This is what kills the "dropped last row" / "wrong sign" bugs at the source.
+const TRANSACTION_SCHEMA = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      date: { type: Type.STRING, description: 'Transaction date exactly as printed on the statement' },
+      type: { type: Type.STRING, description: 'Transaction category as printed, e.g. "ATM Withdrawal", "Direct Deposit"' },
+      description: { type: Type.STRING, description: 'Full transaction description/memo line, exactly as printed' },
+      amount: { type: Type.NUMBER, description: 'Absolute value of the transaction amount. Always positive, never negative.' },
+      direction: {
+        type: Type.STRING,
+        enum: ['debit', 'credit'],
+        description: '"debit" if money left the account (withdrawal, purchase, fee, transfer out). "credit" if money was added (deposit, transfer in, refund).',
+      },
+      balance: { type: Type.NUMBER, description: 'Running balance printed on the statement immediately after this transaction' },
+    },
+    required: ['date', 'description', 'amount', 'direction', 'balance'],
+    propertyOrdering: ['date', 'type', 'description', 'amount', 'direction', 'balance'],
+  },
+};
+
+function buildExtractionPrompt(text: string | null): string {
+  const instructions = `You are extracting transaction rows from a bank statement.
+
+Extract EVERY transaction row visible in this document or text chunk — including the very first and very last row. Do not skip, summarize, merge, or truncate any row, even if the chunk starts or ends mid-page.
+
+Rules:
+- "amount" is always a positive number. Never put a minus sign or negative number in "amount" — use the "direction" field for that instead.
+- "direction" is "debit" for money leaving the account (withdrawals, purchases, fees, transfers out) and "credit" for money coming in (deposits, transfers in, refunds).
+- "balance" is the running balance printed on the statement after that specific transaction, as a plain number.
+- If this chunk has no transaction rows on it (e.g. a cover page), return an empty array. Do not invent rows.`;
+
+  if (text) {
+    return `${instructions}\n\nSTATEMENT TEXT:\n${text}`;
   }
+  return `${instructions}\n\nThe statement page(s) are attached as a PDF below. Read them visually.`;
 }
 
-async function extractPageRange(srcDoc: PDFDocument, start: number, end: number): Promise<string> {
+function formatMoney(value: number): string {
+  const sign = value < 0 ? '-' : '';
+  return `${sign}$${Math.abs(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+async function buildPageChunk(
+  srcDoc: PDFDocument,
+  start: number,
+  end: number
+): Promise<{ base64: string; buffer: Buffer }> {
   const newDoc = await PDFDocument.create();
   const rangeIndices = Array.from({ length: end - start + 1 }, (_, i) => start + i);
   const copiedPages = await newDoc.copyPages(srcDoc, rangeIndices);
-  copiedPages.forEach(page => newDoc.addPage(page));
-  
+  copiedPages.forEach((page) => newDoc.addPage(page));
+
   const pdfBytes = await newDoc.save();
-  const uint8Array = new Uint8Array(pdfBytes);
-  return Buffer.from(uint8Array.buffer, uint8Array.byteOffset, uint8Array.byteLength).toString('base64');
+  const buffer = Buffer.from(pdfBytes);
+  return { base64: buffer.toString('base64'), buffer };
+}
+
+async function withRetry<T>(fn: () => Promise<T>, attempts = 2): Promise<T> {
+  let lastErr: any;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+// Runs `worker` over `items` with at most `limit` in flight at once.
+async function runWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  async function next(): Promise<void> {
+    const current = cursor++;
+    if (current >= items.length) return;
+    results[current] = await worker(items[current]);
+    return next();
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => next());
+  await Promise.all(workers);
+  return results;
+}
+
+async function callGemini(
+  ai: GoogleGenAI,
+  prepared: { base64: string; text: string }
+): Promise<{ rows: any[]; error?: string }> {
+  const useDigitalText = prepared.text.trim().length > 50;
+
+  const contents = useDigitalText
+    ? [{ text: buildExtractionPrompt(prepared.text) }]
+    : [
+        { text: buildExtractionPrompt(null) },
+        { inlineData: { data: prepared.base64, mimeType: 'application/pdf' } },
+      ];
+
+  try {
+    const response = await withRetry(() =>
+      ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents,
+        config: {
+          // 'low' = fast, but still enough reasoning headroom to get sign/rows right.
+          // The JSON schema below is doing most of the accuracy work now, not the thinking.
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          responseMimeType: 'application/json',
+          responseJsonSchema: TRANSACTION_SCHEMA,
+        },
+      })
+    );
+
+    const parsed = JSON.parse(response.text || '[]');
+    return { rows: Array.isArray(parsed) ? parsed : [] };
+  } catch (err: any) {
+    console.error('Chunk extraction failed:', err?.message);
+    return { rows: [], error: err?.message || 'unknown error' };
+  }
 }
 
 export async function POST(req: Request) {
@@ -57,90 +156,76 @@ export async function POST(req: Request) {
     const file = formData.get('file') as File;
     if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
 
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: `File exceeds the ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB limit.` },
+        { status: 400 }
+      );
+    }
+
     const bytes = await file.arrayBuffer();
     const rawBuffer = Buffer.from(bytes);
 
     const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
 
-    // ⚡ STEP 1: MILLISECOND LOCAL TEXT TOKEN EXTRACTION CORE
-    let localTextContent = '';
-    try {
-      const pdfParse = require('pdf-parse');
-      const parsed = await pdfParse(rawBuffer);
-      localTextContent = parsed.text || '';
-    } catch (e) {
-      console.warn('⚠️ Local font layer missing, using image fallback channels.');
+    if (totalPages === 0) {
+      return NextResponse.json({ error: 'PDF has no pages.' }, { status: 400 });
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    let masterTransactions: any[] = [];
 
-    // If an embedded digital text map is active, execute the instant string conversion loophole
-    if (localTextContent.trim().length > 50) {
-      console.log('⚡ HYPER-SPEED DIGITAL CORE ACTIVE: BYPASSING VISUAL QUEUES...');
-      
-      const prompt = `Extract ALL transaction rows from this bank statement text layout. Output raw data lines only.
-      Format exactly like this for EVERY row, using pipe delimiters, with no markdown code blocks and no text description headers:
-      Date | Type | Description | Amount | RunningBalance
-      
-      CRITICAL RULES:
-      1. Extract EVERY single transaction row printed. DO NOT skip or truncate data.
-      2. Withdrawals/debits MUST be prefixed explicitly with a minus sign like "-$14,250.00".
-      
-      RAW TEXT FEED INPUT:
-      ${localTextContent}`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash', // Required upgraded premium core engine
-        contents: [{ text: prompt }],
-        config: { temperature: 0.0 } // Locks absolute mathematical precision
-      });
-
-      masterTransactions = parseTextToJSON(response.text || '');
-    } else {
-      // 📸 FALLBACK STEP 2: CONCURRENT PIPELINE SHARDING FOR IMAGES / SCANS
-      console.log('📸 SCANNED LAYER CORE ACTIVATED: EXECUTING PARALLEL VISUAL BATCHES...');
-      const chunkSize = 30; 
-      const chunks: { start: number; end: number }[] = [];
-
-      for (let i = 0; i < totalPages; i += chunkSize) {
-        chunks.push({ start: i, end: Math.min(i + chunkSize - 1, totalPages - 1) });
-      }
-
-      const chunkPromises = chunks.map(async (chunk) => {
-        const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
-        const prompt = `Extract ALL transaction rows from this bank statement chunk. Output raw data lines only.
-        Format exactly like this for EVERY row using pipe delimiters, with no markdown blocks:
-        Date | Type | Description | Amount | RunningBalance
-        
-        LAWS: Withdrawals/debits MUST be prefixed with a minus sign like "-$42,148.24".`;
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
-          contents: [
-            { text: prompt },
-            { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
-          ],
-          config: { temperature: 0.0 }
-        });
-
-        return response.text || '';
-      });
-
-      const resolvedTexts = await Promise.all(chunkPromises);
-      for (const textChunk of resolvedTexts) {
-        const parsedRows = parseTextToJSON(textChunk);
-        masterTransactions = masterTransactions.concat(parsedRows);
-      }
+    // Split into page-chunks up front (fast, local, sequential — pdf-lib isn't safe to hammer concurrently).
+    const chunkRanges: { start: number; end: number }[] = [];
+    for (let i = 0; i < totalPages; i += PAGE_CHUNK_SIZE) {
+      chunkRanges.push({ start: i, end: Math.min(i + PAGE_CHUNK_SIZE - 1, totalPages - 1) });
     }
 
-    const finalizedRows = masterTransactions.map((tx, index) => ({
-      ...tx,
-      id: index + 1
-    }));
+    const preparedChunks: { base64: string; text: string }[] = [];
+    for (const range of chunkRanges) {
+      const { base64, buffer } = await buildPageChunk(srcDoc, range.start, range.end);
+      let chunkText = '';
+      try {
+        const pdfParse = require('pdf-parse');
+        const parsed = await pdfParse(buffer);
+        chunkText = parsed.text || '';
+      } catch {
+        console.warn(`⚠️ No embedded text layer for pages ${range.start}-${range.end}, using visual extraction.`);
+      }
+      preparedChunks.push({ base64, text: chunkText });
+    }
 
-    console.log(`✅ JET ENGINE SYSTEM SUCCESS: Extracted ${finalizedRows.length} total rows.`);
+    // Now do the slow part — the actual Gemini calls — in parallel, capped at CONCURRENCY.
+    const chunkResults = await runWithConcurrency(preparedChunks, CONCURRENCY, (prepared) =>
+      callGemini(ai, prepared)
+    );
+
+    const masterTransactions: any[] = [];
+    let failedChunks = 0;
+    for (const result of chunkResults) {
+      if (result.error) failedChunks++;
+      masterTransactions.push(...result.rows);
+    }
+
+    const finalizedRows = masterTransactions.map((tx, index) => {
+      const amount = typeof tx.amount === 'number' ? tx.amount : parseFloat(tx.amount) || 0;
+      const balance = typeof tx.balance === 'number' ? tx.balance : parseFloat(tx.balance) || 0;
+      const signedAmount = tx.direction === 'debit' ? -Math.abs(amount) : Math.abs(amount);
+
+      return {
+        id: index + 1,
+        date: tx.date || '',
+        type: tx.type || 'Transaction',
+        description: tx.description || '',
+        amount: formatMoney(signedAmount),
+        balance: formatMoney(balance),
+      };
+    });
+
+    console.log(
+      `✅ Extracted ${finalizedRows.length} rows from ${totalPages} page(s) across ${chunkRanges.length} chunk(s)` +
+        (failedChunks ? `, ${failedChunks} chunk(s) failed.` : '.')
+    );
 
     return NextResponse.json({
       success: true,
@@ -149,6 +234,9 @@ export async function POST(req: Request) {
       total_transactions: finalizedRows.length,
       page_count: totalPages,
       rows: finalizedRows,
+      ...(failedChunks
+        ? { warning: `${failedChunks} of ${chunkRanges.length} page-chunk(s) failed to parse and were skipped.` }
+        : {}),
     });
   } catch (error: any) {
     console.error('Core Exception caught:', error);
