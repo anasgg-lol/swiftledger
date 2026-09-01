@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
+import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; // Next.js official Route segment configuration option
+export const maxDuration = 60; 
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
@@ -25,94 +26,133 @@ function cleanAndParseJSON(rawResponse: string): any {
   }
 }
 
+const TRANSACTION_SCHEMA = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      d: { type: Type.STRING, description: 'Transaction date exactly as printed' },
+      t: { type: Type.STRING, description: 'Transaction category' },
+      desc: { type: Type.STRING, description: 'Full transaction description memo line' },
+      a: { type: Type.NUMBER, description: 'Absolute value of the transaction amount. Always positive.' },
+      dir: { type: Type.STRING, enum: ['debit', 'credit'] },
+      b: { type: Type.NUMBER, description: 'Running balance printed immediately after this transaction' },
+    },
+    required: ['d', 'desc', 'a', 'dir', 'b'],
+  },
+};
+
+function formatMoney(value: number): string {
+  const sign = value < 0 ? '-' : '';
+  return `${sign}$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-    }
+    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
 
     const bytes = await file.arrayBuffer();
-    const processedBuffer = Buffer.from(bytes);
-    
-    let mimeType = file.type || '';
-    if (!mimeType) {
-      if (file.name.endsWith('.pdf')) mimeType = 'application/pdf';
-      else if (file.name.endsWith('.png')) mimeType = 'image/png';
-      else mimeType = 'image/jpeg';
-    }
+    const rawBuffer = Buffer.from(bytes);
 
     let pageCount = 1;
-    if (mimeType === 'application/pdf') {
-      try {
-        const dynamicPdfParse = require('pdf-parse');
-        const parsed = await dynamicPdfParse(processedBuffer);
-        pageCount = parsed.numpages || 1;
-      } catch {
-        pageCount = 1;
-      }
+    let fullDocumentText = '';
+
+    // ⚡ INSTANT TOP-LEVEL STRING PARSE (COMPLETES IN MILLISECONDS)
+    try {
+      const dynamicPdfParse = require('pdf-parse');
+      const parsed = await dynamicPdfParse(rawBuffer);
+      fullDocumentText = parsed.text || '';
+      pageCount = parsed.numpages || 1;
+    } catch {
+      // Scanned fallback
     }
 
-    const base64Data = processedBuffer.toString('base64');
     const ai = new GoogleGenAI({ apiKey });
+    let masterTransactions: any[] = [];
 
-    const prompt = `You are a financial document parser. Extract ALL transaction rows from this bank statement.
+    // 💡 IF DIGITAL TEXT LAYER IS PRESENT: BYPASS VISUAL OCR LATENCY COMPLETELY
+    if (fullDocumentText.trim().length > 100) {
+      console.log(`⚡ DIGITAL TEXT LOGIC IGNITED: PROCESSING ${pageCount} PAGES INSTANTLY...`);
+      
+      const textPrompt = `You are an institutional financial spreadsheet engine. Convert this raw bank statement text dump into a structured JSON array.
+      CRITICAL LAWS:
+      1. Extract EVERY single transaction row printed. DO NOT skip or truncate data.
+      2. Read the running balance column EXACTLY as printed next to each row.
+      3. For outbounds/debits (withdrawals, charges, checks, fees), ensure the "dir" value is output explicitly as "debit".
 
-CRITICAL PRECISION RULES:
-1. Extract EVERY single transaction row printed. DO NOT truncate, skip, or summarize.
-2. Every transaction MUST include a "balance" field read directly from the statement.
-3. Read the running balance directly from the right-hand side column of each row EXACTLY as printed. DO NOT recalculate or guess balances.
-4. If an amount represents a withdrawal, debit, charge, fee, or negative value, explicitly output it with a minus sign prefixed to the string, like "-$1,476.44".
+      RAW DATA INPUT FEED:
+      ${fullDocumentText}`;
 
-THE SCHEMA:
-{
-  "transactions": [
-    {
-      "id": 1,
-      "date": "Date",
-      "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
-      "description": "Full description particulars",
-      "amount": "-$438,176.22",
-      "balance": "$60,351,658.28"
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: [{ text: textPrompt }],
+        config: {
+          responseMimeType: 'application/json',
+          responseJsonSchema: TRANSACTION_SCHEMA,
+          temperature: 0.0,
+        },
+      });
+
+      const parsedData = cleanAndParseJSON(response.text || '[]');
+      masterTransactions = Array.isArray(parsedData) ? parsedData : parsedData.transactions || [];
+    } else {
+      // 📸 SCANNED / IMAGE FALLBACK CHAIN
+      console.log('📸 SCANNED LAYER CORE: RUNNING SINGLE-PASS VISUAL VECTOR MAP...');
+      const base64Data = rawBuffer.toString('base64');
+      
+      const visualPrompt = `Extract EVERY transaction row visible on this bank statement into a structured JSON array matching the schema.
+      "dir" must be "debit" for money leaving the account, and "credit" for deposits.
+      Read the running balance column exactly as printed next to each row.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: [
+          { text: visualPrompt },
+          { inlineData: { data: base64Data, mimeType: 'application/pdf' } },
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          responseJsonSchema: TRANSACTION_SCHEMA,
+          temperature: 0.0,
+        },
+      });
+
+      const parsedData = cleanAndParseJSON(response.text || '[]');
+      masterTransactions = Array.isArray(parsedData) ? parsedData : parsedData.transactions || [];
     }
-  ]
-}
 
-OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: [
-        { text: prompt },
-        { inlineData: { data: base64Data, mimeType: mimeType } },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 16384,
-        temperature: 0.0,
-      },
+    const finalizedRows = masterTransactions.map((tx, index) => {
+      const amount = typeof tx.a === 'number' ? tx.a : parseFloat(tx.a) || 0;
+      const balance = typeof tx.b === 'number' ? tx.b : parseFloat(tx.b) || 0;
+      const isDebit = tx.dir === 'debit';
+      
+      return {
+        id: index + 1,
+        date: tx.d || '',
+        type: tx.t || (isDebit ? 'Debit' : 'Credit'),
+        description: tx.desc || '',
+        amount: formatMoney(isDebit ? -Math.abs(amount) : Math.abs(amount)),
+        balance: formatMoney(balance),
+      };
     });
 
-    const responseText = response.text || '{}';
-    const parsedData = cleanAndParseJSON(responseText);
-    const transactions = parsedData.transactions || parsedData.rows || parsedData || [];
+    console.log(`✅ SUCCESS: Extracted ${finalizedRows.length} rows across ${pageCount} pages.`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Hyper-Speed Core',
-      total_transactions: transactions.length,
+      engine_used: 'SwiftLedger Hyper-Speed Hybrid Core',
+      total_transactions: finalizedRows.length,
       page_count: pageCount,
-      rows: transactions,
+      rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('Parsing System Failure:', error);
+    console.error('System Exception caught:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }
