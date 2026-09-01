@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { PDFDocument } from 'pdf-lib';
 
+const pdfParse = require('pdf-parse');
 export const config = {
   api: {
     bodyParser: true,
