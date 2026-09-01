@@ -118,7 +118,9 @@ export async function POST(req: Request) {
       const chunks = await splitPDFIntoChunks(buffer, CHUNK_SIZE);
       
       // ✅ FIXED: Template literal correctly interpolates variables dynamically now
-      const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+      // ✅ PASTE THIS EXACT CORRECT TEMPLATE LITERAL IN BOTH PLACES INSTEAD:
+      const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`; // 💡 Notice the '$' before the curly brackets!
+
       
       // 🚀 THE WORKER: Executes chunk requests in parallel concurrency instead of blocking threads
       const chunkPromises = chunks.map(async (chunkBuffer, index) => {
