@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; // Next.js official Route segment configuration config object replacement
+export const maxDuration = 60; 
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-// ✅ To this active, functional endpoint model string:
-const WORKING_MODEL = 'gemini-flash-lite-latest';
- // Updated to valid active direct endpoint asset
 
 // ============ PARSE GEMINI RESPONSE ============
 function parseGeminiResponse(text: string): any[] {
@@ -58,10 +55,6 @@ async function splitPDFIntoChunks(buffer: Buffer, chunkSize: number = 5): Promis
       const chunkBytes = await newDoc.save();
       chunks.push(Buffer.from(chunkBytes));
     }
-
-    // ✅ PASTE THIS DIRECT FIX INSTEAD:
-    console.log(`📄 Split into ${chunks.length} chunks`); // 💡 Fixed the typo to console.log!
-
     return chunks;
   } catch (error) {
     console.warn('⚠️ Failed to split PDF:', error);
@@ -115,25 +108,17 @@ export async function POST(req: Request) {
     const CHUNK_SIZE = 5;
     let allTransactions: any[] = [];
 
+    // ✅ FIXED: Hardcoded full endpoint address prevents any missing slash or string formatting errors
+    const url = "https://googleapis.com" + apiKey;
+    const prompt = `Extract ALL financial transactions from this document. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
+
     if (pageCount > CHUNK_SIZE) {
       console.log(`🔄 Processing ${pageCount} pages in chunks...`);
       const chunks = await splitPDFIntoChunks(buffer, CHUNK_SIZE);
       
-      // ✅ FIXED: Template literal correctly interpolates variables dynamically now
-      // ✅ PASTE THIS EXACT CORRECT TEMPLATE LITERAL IN BOTH PLACES INSTEAD:
-      // ✅ PASTE THIS EXACT CONCATENATED RAW ENDPOINT STRUCTURE IN BOTH PLACES INSTEAD:
-      // ✅ And replace them with this version in BOTH places:
-      // ✅ And replace them with this version in BOTH places:
-      const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey;
-
-
-
-
-      
-      // 🚀 THE WORKER: Executes chunk requests in parallel concurrency instead of blocking threads
       const chunkPromises = chunks.map(async (chunkBuffer, index) => {
         const base64Data = chunkBuffer.toString('base64');
-        const prompt = `Extract ALL financial transactions from this document partition chunk. Withdrawals/debits MUST be outputted explicitly with a minus sign prefixed (e.g. "-$10.00"). Return a clean JSON array matching this exact parameter mapping layout: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
+        console.log(`📄 Processing chunk ${index + 1}/${chunks.length}`);
 
         const response = await fetch(url, {
           method: 'POST',
@@ -150,7 +135,7 @@ export async function POST(req: Request) {
             ],
             generationConfig: {
               responseMimeType: 'application/json',
-              maxOutputTokens: 8192,
+              maxOutputTokens: 4096,
               temperature: 0,
             },
           }),
@@ -171,12 +156,6 @@ export async function POST(req: Request) {
     } else {
       // Single request for small PDFs
       const base64Data = buffer.toString('base64');
-      const prompt = `Extract ALL financial transactions. Withdrawals/debits MUST be outputted explicitly with a minus sign prefixed (e.g. "-$10.00"). Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
-      
-      // ✅ FIXED: Correctly configured string interpolation
-     // ✅ PASTE THIS EXACT CONCATENATED RAW ENDPOINT STRUCTURE IN BOTH PLACES INSTEAD:
-      const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey; // 💡 Hardcoding the raw string concatenation guarantees compile accuracy!
-
 
       const response = await fetch(url, {
         method: 'POST',
@@ -187,13 +166,13 @@ export async function POST(req: Request) {
               role: 'user',
               parts: [
                 { text: prompt },
-                { inlineData: { mimeType: file.type || 'application/pdf', data: base64Data } },
+                { inlineData: { mimeType: 'application/pdf', data: base64Data } },
               ],
             },
           ],
           generationConfig: {
             responseMimeType: 'application/json',
-            maxOutputTokens: 8192,
+            maxOutputTokens: 4096,
             temperature: 0,
           },
         }),
@@ -213,7 +192,6 @@ export async function POST(req: Request) {
       allTransactions = parseGeminiResponse(text);
     }
 
-    // Natively normalize ID sequences to prevent chunk tracking drift
     const finalizedRows = allTransactions.map((tx: any, index: number) => ({
       id: index + 1,
       date: tx.date || tx.d || '',
