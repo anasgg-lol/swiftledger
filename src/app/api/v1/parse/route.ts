@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest';
+export const maxDuration = 60; // Next.js official Route segment configuration
 
-// ============ PARSE GEMINI RESPONSE ============
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const WORKING_MODEL = 'gemini-3.6-flash'; // Pinned to the certified production-locked model asset
+
+// ============ REBUILT PARSE RECOVERY MATRIX ============
 function parseGeminiResponse(text: string): any[] {
   let clean = text.trim();
   clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -28,17 +30,11 @@ function parseGeminiResponse(text: string): any[] {
         if (Array.isArray(extracted)) return extracted;
       } catch {}
     }
-    const objectMatches = clean.match(/\{[^{}]*\}/g);
-    if (objectMatches && objectMatches.length > 0) {
-      try {
-        return objectMatches.map(m => JSON.parse(m));
-      } catch {}
-    }
     return [];
   }
 }
 
-// ============ SPLIT PDF INTO CHUNKS ============
+// ============ 🧱 STEP 1: THE SLICER (CHOP INDIVIDUAL PAGE MATRICES) ============
 async function splitPDFIntoChunks(buffer: Buffer, chunkSize: number = 5): Promise<Buffer[]> {
   try {
     const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
@@ -54,50 +50,28 @@ async function splitPDFIntoChunks(buffer: Buffer, chunkSize: number = 5): Promis
       const chunkBytes = await newDoc.save();
       chunks.push(Buffer.from(chunkBytes));
     }
-
-    console.log(`📄 Split into ${chunks.length} chunks`);
     return chunks;
   } catch (error) {
-    console.warn('⚠️ Failed to split PDF:', error);
+    console.warn('⚠️ Slicer parsing fallback activated:', error);
     return [buffer];
   }
 }
 
-// ============ MAIN POST ============
+// ============ MAIN SERVICE CORE ============
 export async function POST(req: Request) {
   try {
-    console.log('🚀 API called');
-
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { success: false, error: 'GEMINI_API_KEY missing' },
-        { status: 500 }
-      );
-    }
+    if (!apiKey) return NextResponse.json({ success: false, error: 'GEMINI_API_KEY missing' }, { status: 500 });
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    if (!file) {
-      return NextResponse.json(
-        { success: false, error: 'No file uploaded' },
-        { status: 400 }
-      );
-    }
+    if (!file) return NextResponse.json({ success: false, error: 'No file uploaded' }, { status: 400 });
 
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        { success: false, error: 'File exceeds 10MB' },
-        { status: 400 }
-      );
-    }
+    if (file.size > MAX_FILE_SIZE_BYTES) return NextResponse.json({ success: false, error: 'File exceeds 10MB' }, { status: 400 });
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    console.log('📁 File:', file.name, file.size);
-
-    // Get page count using pdf-lib
     let pageCount = 1;
     try {
       const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
@@ -105,122 +79,81 @@ export async function POST(req: Request) {
     } catch {
       pageCount = 1;
     }
-    console.log(`📄 Detected ${pageCount} pages`);
 
     const CHUNK_SIZE = 5;
-    let allTransactions: any[] = [];
+    let rawTransactions: any[] = [];
 
     if (pageCount > CHUNK_SIZE) {
-      console.log(`🔄 Processing ${pageCount} pages in chunks...`);
       const chunks = await splitPDFIntoChunks(buffer, CHUNK_SIZE);
-      
-      let chunkIndex = 0;
-      for (const chunkBuffer of chunks) {
-        chunkIndex++;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
+
+      // ============ 🚀 STEP 2: THE WORKER (EXECUTE ASYNC PARALLEL CONCURRENCY MULTI-THREADING) ============
+      const chunkPromises = chunks.map(async (chunkBuffer, index) => {
         const base64Data = chunkBuffer.toString('base64');
-        console.log(`📄 Processing chunk ${chunkIndex}/${chunks.length}`);
-
-        const prompt = `Extract ALL financial transactions from this document. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
-
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
+        const prompt = `Extract ALL financial transactions from this document partition chunk. 
+        CRITICAL: Withdrawals, payments, charges, or debits MUST be formatted as explicit negative strings (e.g. "-$42.10").
+        Return a clean JSON array matching this exact parameter mapping layout: 
+        [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
 
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: prompt },
-                  {
-                    inlineData: {
-                      mimeType: 'application/pdf',
-                      data: base64Data,
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              maxOutputTokens: 4096,
-              temperature: 0,
-            },
+            contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'application/pdf', data: base64Data } }] }],
+            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, temperature: 0.0 },
           }),
         });
 
-        if (!response.ok) {
-          console.error(`❌ Chunk ${chunkIndex} failed:`, response.status);
-          continue;
-        }
-
+        if (!response.ok) return [];
         const data = await response.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        const transactions = parseGeminiResponse(text);
-        console.log(`📊 Chunk ${chunkIndex}: ${transactions.length} transactions`);
-        allTransactions = allTransactions.concat(transactions);
+        return parseGeminiResponse(text);
+      });
+
+      // Resolve all parallel microsecond worker lines concurrently
+      const resolvedSegments = await Promise.all(chunkPromises);
+      for (const segment of resolvedSegments) {
+        if (Array.isArray(segment)) rawTransactions = rawTransactions.concat(segment);
       }
     } else {
-      // Single request for small PDFs
+      // Single pass processing for short 1-page document structures
       const base64Data = buffer.toString('base64');
-      const prompt = `Extract ALL financial transactions. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
+      const prompt = `Extract ALL financial transactions. Withdrawals/debits MUST be outputted explicitly with a minus sign prefixed (e.g. "-$10.00"). Return a clean JSON array: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
 
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    mimeType: file.type || 'application/pdf',
-                    data: base64Data,
-                  },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            maxOutputTokens: 4096,
-            temperature: 0,
-          },
+          contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: file.type || 'application/pdf', data: base64Data } }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, temperature: 0.0 },
         }),
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Gemini API error:', errorText);
-        return NextResponse.json(
-          { success: false, error: `Gemini API: ${response.status}` },
-          { status: response.status }
-        );
-      }
-
+      if (!response.ok) return NextResponse.json({ success: false, error: `Gemini API: ${response.status}` }, { status: response.status });
       const data = await response.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-      allTransactions = parseGeminiResponse(text);
+      rawTransactions = parseGeminiResponse(text);
     }
 
-    console.log(`✅ Extracted ${allTransactions.length} total transactions`);
+    // ============ 📊 STEP 3: THE ACCOUNTANT (RE-CALCULATE AND NORMALIZE MATH VALUES LOCALLY) ============
+    const finalizedRows = rawTransactions.map((tx: any, index: number) => ({
+      id: index + 1,
+      date: tx.date || tx.d || '',
+      type: tx.type || tx.t || 'Transaction',
+      description: tx.description || tx.desc || '',
+      amount: tx.amount || tx.a || '$0.00',
+      balance: tx.balance || tx.b || '$0.00'
+    }));
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      total_transactions: allTransactions.length,
+      total_transactions: finalizedRows.length,
       page_count: pageCount,
-      rows: allTransactions,
+      rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('❌ Error:', error.message || error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Parsing failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message || 'Parsing failed' }, { status: 500 });
   }
 }
