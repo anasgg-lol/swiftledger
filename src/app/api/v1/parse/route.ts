@@ -1,11 +1,14 @@
 // ✅ PASTE THIS ABSOLUTE TOP OF FILE COMPILATION MATRIX:
+// ✅ PASTE THIS ABSOLUTE TOP OF FILE COMPILATION MATRIX:
 import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { PDFDocument } from 'pdf-lib';
 
 export const maxDuration = 60; // Next.js official Route segment configuration
-const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15MB safe threshold upload window limit
-const CONCURRENCY = 8;
+
+const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const CONCURRENCY = 8; // Restores true multi-threaded parallel execution maps
+
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
 }
@@ -22,6 +25,7 @@ interface MoneyToken {
   value: number;
   explicitSign: -1 | 1 | 0; 
 }
+
 
 
 const MONEY_REGEX = /\(?-?\+?\$?\s?[\d,]+\.\d{2}\)?/g;
@@ -231,16 +235,16 @@ async function callGemini(
           { inlineData: { data: prepared.base64, mimeType: 'application/pdf' } },
         ];
 
-    const response = await withRetry(() =>
-      ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents,
-        config: {
-          responseMimeType: 'application/json',
-          responseJsonSchema: TRANSACTION_SCHEMA,
-        },
-      })
-    );
+    const response = await ai.models.generateContent({
+      
+      model: 'gemini-3.6-flash',
+      contents,
+      config: {
+        responseMimeType: 'application/json',
+        responseJsonSchema: TRANSACTION_SCHEMA,
+      },
+    })
+    
 
     const parsed = JSON.parse(response.text || '[]');
     return { rows: Array.isArray(parsed) ? parsed : [] };
@@ -284,22 +288,22 @@ export async function POST(req: Request) {
 
     const ai = new GoogleGenAI({ apiKey });
     const dynamicPdfParse = require('pdf-parse');
-    // Extract every page's text + base64 up front (fast, local, sequential — pdf-lib isn't safe to hammer concurrently)
     const pages: { text: string; base64: string }[] = [];
     for (let p = 0; p < totalPages; p++) {
       const { base64, buffer } = await buildPageChunk(srcDoc, p, p);
       let text = '';
       try {
-        
-        const parsed = await dynamicPdfParse(rawBuffer);
+        const parsed = await dynamicPdfParse(buffer);
         text = parsed.text || '';
       } catch {
-        // no embedded text layer — scanned page, will need Gemini vision
       }
       pages.push({ text, base64 });
     }
-
-    // LAYER 1: local parse, sequential (needs balance-chain continuity, but this is regex — effectively instant)
+    
+    
+    
+    
+      // LAYER 1: local parse, sequential (needs balance-chain continuity, but this is regex — effectively instant)
     const t0 = Date.now();
     const pageResults: { rows: LocalRow[]; needsGemini: boolean }[] = [];
     let runningBalance: number | null = null;
