@@ -81,18 +81,20 @@ function generateCSV(rows: Transaction[]): string {
   return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
 }
 
+// ✅ WITH THIS HARDENED PRODUCTION FUNCTION:
 function generateXeroCSV(rows: Transaction[], bank: string = ''): string {
   if (!rows.length) return '';
   const headers = ['Date', 'Description', 'Amount', 'Balance', 'Bank'];
   const csvRows = rows.map((r) => [
     r.date,
     `${r.description} (${r.type})`,
-    parseCurrency(r.amount).toFixed(2),
+    getSignedAmount(r).toFixed(2), // 💡Manually safeguards arithmetic vector directions from drifting
     parseCurrency(r.balance).toFixed(2),
     bank || 'General',
   ]);
   return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
 }
+
 
 function generateOFX(rows: Transaction[], bank: string = ''): string {
   if (!rows.length) return '';

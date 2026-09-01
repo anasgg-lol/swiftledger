@@ -240,7 +240,6 @@ async function callGemini(
         model: 'gemini-3.6-flash',
         contents,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
           responseMimeType: 'application/json',
           responseJsonSchema: TRANSACTION_SCHEMA,
         },
@@ -295,7 +294,7 @@ export async function POST(req: Request) {
       const { base64, buffer } = await buildPageChunk(srcDoc, p, p);
       let text = '';
       try {
-        const pdfParse = require('pdf-parse');
+        
         const parsed = await pdfParse(buffer);
         text = parsed.text || '';
       } catch {
