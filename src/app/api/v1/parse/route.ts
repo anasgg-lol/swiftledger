@@ -10,7 +10,6 @@ function cleanAndParseJSON(rawResponse: string): any {
   try {
     return JSON.parse(clean);
   } catch {
-    // Try to salvage if truncated
     if (clean.startsWith('[') && !clean.endsWith(']')) {
       try { return JSON.parse(clean + ']'); } catch {}
     }
@@ -21,11 +20,14 @@ function cleanAndParseJSON(rawResponse: string): any {
   }
 }
 
-
+// ============ MAIN POST ============
 export async function POST(req: Request) {
   try {
     // 1. Check API key
     const apiKey = process.env.GEMINI_API_KEY;
+    console.log('🔑 API Key exists?', !!apiKey);
+    console.log('🔑 API Key length:', apiKey?.length || 0);
+    
     if (!apiKey) {
       console.error('❌ GEMINI_API_KEY is not set');
       return NextResponse.json(
@@ -55,10 +57,12 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(bytes);
     const base64Data = buffer.toString('base64');
 
+    console.log('📁 File:', file.name, file.size, 'bytes');
+
     // 4. Initialize Gemini
     const ai = new GoogleGenAI({ apiKey });
 
-    // 5. Models to try (in order of speed)
+    // 5. Models to try
     const models = [
       'gemini-1.5-flash',
       'gemini-1.5-flash-lite',
@@ -109,9 +113,15 @@ export async function POST(req: Request) {
         console.log(`✅ Success with model: ${model}`);
         break;
       } catch (error: any) {
-        console.warn(`⚠️ Model ${model} failed:`, error.message || error);
+        console.error(`❌ Model ${model} failed:`);
+        console.error(JSON.stringify(error, null, 2));
+        console.error('Error message:', error?.message);
+        console.error('Error stack:', error?.stack);
+        console.error('Error status:', error?.status);
+        if (error?.error) {
+          console.error('Error details:', JSON.stringify(error.error, null, 2));
+        }
         lastError = error;
-        // Continue to next model
       }
     }
 
@@ -119,8 +129,15 @@ export async function POST(req: Request) {
     if (!result) {
       const errorMessage = lastError?.message || 'All Gemini models failed';
       console.error('❌ All models failed:', errorMessage);
+      
+      // Return the full error details
       return NextResponse.json(
-        { success: false, error: `Gemini error: ${errorMessage}` },
+        { 
+          success: false, 
+          error: errorMessage,
+          details: lastError?.error || lastError,
+          stack: lastError?.stack,
+        },
         { status: 500 }
       );
     }
@@ -150,6 +167,7 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error('❌ Unhandled error:', error?.message || error);
+    console.error('Full error:', JSON.stringify(error, null, 2));
     return NextResponse.json(
       { success: false, error: error?.message || 'Internal server error' },
       { status: 500 }
