@@ -4,7 +4,7 @@ import { PDFDocument } from 'pdf-lib';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
-// ============ GET PAGE COUNT (FAST) ============
+// ============ GET PAGE COUNT ============
 async function getPDFPageCount(buffer: Buffer): Promise<number> {
   try {
     const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
@@ -14,22 +14,19 @@ async function getPDFPageCount(buffer: Buffer): Promise<number> {
   }
 }
 
-// ============ PARSE JSON (SIMPLE) ============
+// ============ PARSE JSON ============
 function cleanAndParseJSON(rawResponse: string): any {
   let clean = rawResponse.trim();
   clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
   try {
     return JSON.parse(clean);
   } catch {
-    // If it's an array that got cut off, close it
     if (clean.startsWith('[') && !clean.endsWith(']')) {
       try { return JSON.parse(clean + ']'); } catch {}
     }
-    // If it's an object that got cut off, close it
     if (clean.startsWith('{') && !clean.endsWith('}')) {
       try { return JSON.parse(clean + '}'); } catch {}
     }
-    // Try to extract individual objects
     const matches = clean.match(/\{[^{}]*\}/g);
     if (matches && matches.length > 0) {
       try { return matches.map(m => JSON.parse(m)); } catch {}
@@ -74,7 +71,6 @@ export async function POST(req: Request) {
       else mimeType = 'image/jpeg';
     }
 
-    // Get page count for PDFs
     let pageCount = 1;
     if (mimeType === 'application/pdf') {
       pageCount = await getPDFPageCount(rawBuffer);
@@ -83,24 +79,14 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey });
     const base64Data = rawBuffer.toString('base64');
 
-    // THE EXACT PROMPT THAT WORKED
-    const prompt = `Extract ALL financial transactions from this document into a JSON object matching this exact schema:
-{
-  "transactions": [
-    {
-      "id": 1,
-      "date": "1st November 2018",
-      "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order",
-      "description": "Clean description",
-      "amount": "£10.00",
-      "balance": "£500.00"
-    }
-  ]
-}`;
+    // 🔥 USE GEMINI 2.0 FLASH – 2x FASTER
+    const model = 'gemini-2.0-flash-lite-preview-09-2024'; // or 'gemini-2.0-flash-exp'
 
-    // THE EXACT MODEL AND CONFIG THAT WORKED
+    // 🔥 SUPER SHORT PROMPT
+    const prompt = 'Extract all financial transactions as JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}';
+
     const result = await ai.models.generateContent({
-      model: 'gemini-3.5-flash-lite',
+      model: model,
       contents: [
         {
           role: 'user',
@@ -112,16 +98,14 @@ export async function POST(req: Request) {
       ],
       config: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 4096,
-        temperature: 0.1,
+        maxOutputTokens: 2048,
+        temperature: 0,
       },
     });
 
-    const text = result.text || '{}';
-    const parsedData = cleanAndParseJSON(text);
-    const transactions = Array.isArray(parsedData)
-      ? parsedData
-      : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
+    const text = result.text || '[]';
+    const rows = cleanAndParseJSON(text);
+    const transactions = Array.isArray(rows) ? rows : rows.transactions || rows.rows || [];
 
     return NextResponse.json({
       success: true,
