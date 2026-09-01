@@ -122,9 +122,7 @@ export async function POST(req: Request) {
 
         const prompt = `Extract ALL financial transactions from this document. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
 
-        // ✅ FIX THE TWO URL LINES (LINE 115 and 156) TO MATCH THIS EXACT STRING:
-        const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey;
-
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
           method: 'POST',
@@ -167,9 +165,7 @@ export async function POST(req: Request) {
       // Single request for small PDFs
       const base64Data = buffer.toString('base64');
       const prompt = `Extract ALL financial transactions. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
-      // ✅ FIX THE TWO URL LINES (LINE 115 and 156) TO MATCH THIS EXACT STRING:
-      const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey;
-
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
 
       const response = await fetch(url, {
         method: 'POST',
