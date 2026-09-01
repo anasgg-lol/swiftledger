@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 
-export const maxDuration = 60; // Next.js official Route Segment Configuration
+export const maxDuration = 60; // Official Next.js Route Config
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
@@ -30,12 +30,12 @@ const TRANSACTION_SCHEMA = {
   items: {
     type: Type.OBJECT,
     properties: {
-      d: { type: Type.STRING, description: 'Transaction date exactly as printed on the statement' },
-      t: { type: Type.STRING, description: 'Transaction category type printed' },
-      desc: { type: Type.STRING, description: 'Full transaction description memo line exactly as printed' },
-      a: { type: Type.NUMBER, description: 'Absolute value of the transaction amount. Always positive, never negative.' },
-      dir: { type: Type.STRING, enum: ['debit', 'credit'], description: '"debit" if money left the account, "credit" if money was added.' },
-      b: { type: Type.NUMBER, description: 'Running balance printed immediately after this transaction' },
+      d: { type: Type.STRING, description: 'Transaction date exactly as printed' },
+      t: { type: Type.STRING, description: 'Transaction category categorical type description' },
+      desc: { type: Type.STRING, description: 'Full transaction description particulars' },
+      a: { type: Type.NUMBER, description: 'Absolute transaction amount. Always positive.' },
+      dir: { type: Type.STRING, enum: ['debit', 'credit'], description: '"debit" for withdrawals, charges, fees. "credit" for deposits.' },
+      b: { type: Type.NUMBER, description: 'Running account balance printed immediately after this row' },
     },
     required: ['d', 'desc', 'a', 'dir', 'b'],
   },
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     let pageCount = 1;
     if (mimeType === 'application/pdf') {
       try {
-        const dynamicPdfParse = require('pdf-parse'); // Dynamic scoping passes build sweeps safely
+        const dynamicPdfParse = require('pdf-parse'); // Dynamic scoping passes build bundle checks cleanly
         const parsed = await dynamicPdfParse(processedBuffer);
         pageCount = parsed.numpages || 1;
       } catch {
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     const base64Data = processedBuffer.toString('base64');
     const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `You are an expert financial document parser. Extract ALL transaction rows from this bank statement.
+    const prompt = `You are an expert financial ledger parser. Extract ALL transaction rows from this bank statement.
 
 CRITICAL ACCURACY LAWS:
 1. Extract EVERY single transaction row printed. DO NOT truncate, skip, or summarize anything.
@@ -98,7 +98,7 @@ CRITICAL ACCURACY LAWS:
 OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash', // Fully upgraded active production core model asset
+      model: 'gemini-3.6-flash', // Upgraded to active production engine keyword asset
       contents: [
         { text: prompt },
         { inlineData: { data: base64Data, mimeType: mimeType } },
@@ -114,6 +114,7 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
     const parsedData = cleanAndParseJSON(responseText);
     const masterTransactions = parsedData.transactions || parsedData.rows || parsedData || [];
 
+    // 🔥 PRECISE FIXED VARIABLE RECONCILIATION LAYER (CORRECTLY ACCESSES COMPRESSED SCHEMA KEYS)
     const finalizedRows = masterTransactions.map((tx: any, index: number) => {
       const amount = typeof tx.a === 'number' ? tx.a : parseFloat(tx.a) || 0;
       const balance = typeof tx.b === 'number' ? tx.b : parseFloat(tx.b) || 0;
@@ -129,12 +130,12 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
       };
     });
 
-    console.log(`✅ PARSER SUCCESS: Extracted ${finalizedRows.length} rows across ${pageCount} pages.`);
+    console.log(`✅ JET ENGINE EXECUTION COMPLETE: Extracted ${finalizedRows.length} total rows.`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Hyper-Speed Core',
+      engine_used: 'SwiftLedger Single-Pass Core',
       total_transactions: finalizedRows.length,
       page_count: pageCount,
       rows: finalizedRows,
