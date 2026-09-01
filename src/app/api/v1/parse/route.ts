@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -23,20 +23,17 @@ function cleanAndParseJSON(rawResponse: string): any {
 // ============ MAIN POST ============
 export async function POST(req: Request) {
   try {
-    // 1. Check API key
+    console.log('🚀 API called');
+
     const apiKey = process.env.GEMINI_API_KEY;
-    console.log('🔑 API Key exists?', !!apiKey);
-    console.log('🔑 API Key length:', apiKey?.length || 0);
-    
     if (!apiKey) {
-      console.error('❌ GEMINI_API_KEY is not set');
+      console.error('❌ GEMINI_API_KEY missing');
       return NextResponse.json(
-        { success: false, error: 'GEMINI_API_KEY is missing from environment variables' },
+        { success: false, error: 'GEMINI_API_KEY missing' },
         { status: 500 }
       );
     }
 
-    // 2. Parse file
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) {
@@ -47,27 +44,20 @@ export async function POST(req: Request) {
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
       return NextResponse.json(
-        { success: false, error: 'File exceeds 10MB limit' },
+        { success: false, error: 'File exceeds 10MB' },
         { status: 400 }
       );
     }
 
-    // 3. Read file
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const base64Data = buffer.toString('base64');
 
-    console.log('📁 File:', file.name, file.size, 'bytes');
-
-    // 4. Initialize Gemini
-    const ai = new GoogleGenAI({ apiKey });
-
-    // 5. Models to try
-    const models = [
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-lite',
-      'gemini-1.5-pro',
-    ];
+    // 🔥 OLD SDK – WORKS EVERY TIME
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash', // This model definitely exists
+    });
 
     const prompt = `Extract ALL financial transactions from this document into a JSON object matching this exact schema:
 {
@@ -83,93 +73,55 @@ export async function POST(req: Request) {
   ]
 }`;
 
-    let result = null;
-    let modelUsed = '';
-    let lastError = null;
+    console.log('🤖 Sending to Gemini...');
 
-    // 6. Try each model
-    for (const model of models) {
-      try {
-        console.log(`🔄 Trying model: ${model}`);
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: [
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
             {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inlineData: { data: base64Data, mimeType: 'application/pdf' } }
-              ]
-            }
+              inlineData: {
+                mimeType: file.type || 'application/pdf',
+                data: base64Data,
+              },
+            },
           ],
-          config: {
-            responseMimeType: 'application/json',
-            maxOutputTokens: 4096,
-            temperature: 0.1,
-          },
-        });
-        result = response;
-        modelUsed = model;
-        console.log(`✅ Success with model: ${model}`);
-        break;
-      } catch (error: any) {
-        console.error(`❌ Model ${model} failed:`);
-        console.error(JSON.stringify(error, null, 2));
-        console.error('Error message:', error?.message);
-        console.error('Error stack:', error?.stack);
-        console.error('Error status:', error?.status);
-        if (error?.error) {
-          console.error('Error details:', JSON.stringify(error.error, null, 2));
-        }
-        lastError = error;
-      }
-    }
-
-    // 7. If all models failed
-    if (!result) {
-      const errorMessage = lastError?.message || 'All Gemini models failed';
-      console.error('❌ All models failed:', errorMessage);
-      
-      // Return the full error details
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: errorMessage,
-          details: lastError?.error || lastError,
-          stack: lastError?.stack,
         },
-        { status: 500 }
-      );
-    }
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 4096,
+        temperature: 0.1,
+      },
+    });
 
-    // 8. Parse response
-    const text = result.text || '{}';
-    let parsedData;
-    try {
-      parsedData = cleanAndParseJSON(text);
-    } catch (parseError: any) {
-      console.error('❌ Parse error:', parseError.message);
-      return NextResponse.json(
-        { success: false, error: 'Failed to parse Gemini response' },
-        { status: 500 }
-      );
-    }
+    const response = result.response;
+    const text = response.text() || '{}';
 
+    console.log('📥 Response length:', text.length);
+
+    const parsedData = cleanAndParseJSON(text);
     const transactions = parsedData.transactions || parsedData.rows || [];
 
-    // 9. Return success
+    console.log(`✅ Extracted ${transactions.length} transactions`);
+
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: modelUsed,
       total_transactions: transactions.length,
       rows: transactions,
     });
   } catch (error: any) {
-    console.error('❌ Unhandled error:', error?.message || error);
-    console.error('Full error:', JSON.stringify(error, null, 2));
+    console.error('❌ Error:', error?.message || error);
+    // Log full error details
+    if (error?.response) {
+      console.error('Response status:', error.response?.status);
+      console.error('Response data:', error.response?.data);
+    }
     return NextResponse.json(
-      { success: false, error: error?.message || 'Internal server error' },
+      { success: false, error: error?.message || 'Parsing failed' },
       { status: 500 }
     );
   }
