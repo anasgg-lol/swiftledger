@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; 
-
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const WORKING_MODEL = 'gemini-flash-lite-latest';
 
 // ============ PARSE GEMINI RESPONSE ============
 function parseGeminiResponse(text: string): any[] {
@@ -55,6 +54,8 @@ async function splitPDFIntoChunks(buffer: Buffer, chunkSize: number = 5): Promis
       const chunkBytes = await newDoc.save();
       chunks.push(Buffer.from(chunkBytes));
     }
+
+    console.log(`📄 Split into ${chunks.length} chunks`);
     return chunks;
   } catch (error) {
     console.warn('⚠️ Failed to split PDF:', error);
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
 
     console.log('📁 File:', file.name, file.size);
 
+    // Get page count using pdf-lib
     let pageCount = 1;
     try {
       const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
@@ -108,17 +110,21 @@ export async function POST(req: Request) {
     const CHUNK_SIZE = 5;
     let allTransactions: any[] = [];
 
-    // ✅ FIXED: Hardcoded full endpoint address prevents any missing slash or string formatting errors
-    const url = "https://googleapis.com" + apiKey;
-    const prompt = `Extract ALL financial transactions from this document. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
-
     if (pageCount > CHUNK_SIZE) {
       console.log(`🔄 Processing ${pageCount} pages in chunks...`);
       const chunks = await splitPDFIntoChunks(buffer, CHUNK_SIZE);
       
-      const chunkPromises = chunks.map(async (chunkBuffer, index) => {
+      let chunkIndex = 0;
+      for (const chunkBuffer of chunks) {
+        chunkIndex++;
         const base64Data = chunkBuffer.toString('base64');
-        console.log(`📄 Processing chunk ${index + 1}/${chunks.length}`);
+        console.log(`📄 Processing chunk ${chunkIndex}/${chunks.length}`);
+
+        const prompt = `Extract ALL financial transactions from this document. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
+
+        // ✅ FIX THE TWO URL LINES (LINE 115 and 156) TO MATCH THIS EXACT STRING:
+        const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey;
+
 
         const response = await fetch(url, {
           method: 'POST',
@@ -129,7 +135,12 @@ export async function POST(req: Request) {
                 role: 'user',
                 parts: [
                   { text: prompt },
-                  { inlineData: { mimeType: 'application/pdf', data: base64Data } },
+                  {
+                    inlineData: {
+                      mimeType: 'application/pdf',
+                      data: base64Data,
+                    },
+                  },
                 ],
               },
             ],
@@ -141,21 +152,24 @@ export async function POST(req: Request) {
           }),
         });
 
-        if (!response.ok) return [];
+        if (!response.ok) {
+          console.error(`❌ Chunk ${chunkIndex} failed:`, response.status);
+          continue;
+        }
+
         const data = await response.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        return parseGeminiResponse(text);
-      });
-
-      const resolvedSegments = await Promise.all(chunkPromises);
-      for (const segment of resolvedSegments) {
-        if (Array.isArray(segment)) {
-          allTransactions = allTransactions.concat(segment);
-        }
+        const transactions = parseGeminiResponse(text);
+        console.log(`📊 Chunk ${chunkIndex}: ${transactions.length} transactions`);
+        allTransactions = allTransactions.concat(transactions);
       }
     } else {
       // Single request for small PDFs
       const base64Data = buffer.toString('base64');
+      const prompt = `Extract ALL financial transactions. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
+      // ✅ FIX THE TWO URL LINES (LINE 115 and 156) TO MATCH THIS EXACT STRING:
+      const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey;
+
 
       const response = await fetch(url, {
         method: 'POST',
@@ -166,7 +180,12 @@ export async function POST(req: Request) {
               role: 'user',
               parts: [
                 { text: prompt },
-                { inlineData: { mimeType: 'application/pdf', data: base64Data } },
+                {
+                  inlineData: {
+                    mimeType: file.type || 'application/pdf',
+                    data: base64Data,
+                  },
+                },
               ],
             },
           ],
@@ -192,23 +211,14 @@ export async function POST(req: Request) {
       allTransactions = parseGeminiResponse(text);
     }
 
-    const finalizedRows = allTransactions.map((tx: any, index: number) => ({
-      id: index + 1,
-      date: tx.date || tx.d || '',
-      type: tx.type || tx.t || 'Transaction',
-      description: tx.description || tx.desc || '',
-      amount: tx.amount || tx.a || '$0.00',
-      balance: tx.balance || tx.b || '$0.00'
-    }));
-
-    console.log(`✅ Extracted ${finalizedRows.length} total transactions`);
+    console.log(`✅ Extracted ${allTransactions.length} total transactions`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      total_transactions: finalizedRows.length,
+      total_transactions: allTransactions.length,
       page_count: pageCount,
-      rows: finalizedRows,
+      rows: allTransactions,
     });
   } catch (error: any) {
     console.error('❌ Error:', error.message || error);
