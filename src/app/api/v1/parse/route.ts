@@ -9,29 +9,29 @@ export const config = {
 };
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
-const PAGE_CHUNK_SIZE = 3;      // pages per Gemini call — small enough that output truncation basically can't happen
-const CONCURRENCY = 5;          // parallel Gemini calls in-flight at once — tune against your Gemini tier's RPM limit
+const PAGE_CHUNK_SIZE = 1;      // 1 page per Gemini call — maximum parallelism, smallest output per call
+const CONCURRENCY = 10;         // parallel Gemini calls in-flight at once — tune against your Gemini tier's RPM limit
 
-// Strict schema — the model CANNOT return malformed rows, missing fields, or free text.
-// This is what kills the "dropped last row" / "wrong sign" bugs at the source.
+// Strict schema, short keys — the model CANNOT return malformed rows, missing fields, or free text,
+// and short keys mean less JSON to generate per row (less time typing "description": vs "desc":).
 const TRANSACTION_SCHEMA = {
   type: Type.ARRAY,
   items: {
     type: Type.OBJECT,
     properties: {
-      date: { type: Type.STRING, description: 'Transaction date exactly as printed on the statement' },
-      type: { type: Type.STRING, description: 'Transaction category as printed, e.g. "ATM Withdrawal", "Direct Deposit"' },
-      description: { type: Type.STRING, description: 'Full transaction description/memo line, exactly as printed' },
-      amount: { type: Type.NUMBER, description: 'Absolute value of the transaction amount. Always positive, never negative.' },
-      direction: {
+      d: { type: Type.STRING, description: 'Transaction date exactly as printed on the statement' },
+      t: { type: Type.STRING, description: 'Transaction category as printed, e.g. "ATM Withdrawal", "Direct Deposit"' },
+      desc: { type: Type.STRING, description: 'Full transaction description/memo line, exactly as printed' },
+      a: { type: Type.NUMBER, description: 'Absolute value of the transaction amount. Always positive, never negative.' },
+      dir: {
         type: Type.STRING,
         enum: ['debit', 'credit'],
         description: '"debit" if money left the account (withdrawal, purchase, fee, transfer out). "credit" if money was added (deposit, transfer in, refund).',
       },
-      balance: { type: Type.NUMBER, description: 'Running balance printed on the statement immediately after this transaction' },
+      b: { type: Type.NUMBER, description: 'Running balance printed on the statement immediately after this transaction' },
     },
-    required: ['date', 'description', 'amount', 'direction', 'balance'],
-    propertyOrdering: ['date', 'type', 'description', 'amount', 'direction', 'balance'],
+    required: ['d', 'desc', 'a', 'dir', 'b'],
+    propertyOrdering: ['d', 't', 'desc', 'a', 'dir', 'b'],
   },
 };
 
@@ -41,9 +41,9 @@ function buildExtractionPrompt(text: string | null): string {
 Extract EVERY transaction row visible in this document or text chunk — including the very first and very last row. Do not skip, summarize, merge, or truncate any row, even if the chunk starts or ends mid-page.
 
 Rules:
-- "amount" is always a positive number. Never put a minus sign or negative number in "amount" — use the "direction" field for that instead.
-- "direction" is "debit" for money leaving the account (withdrawals, purchases, fees, transfers out) and "credit" for money coming in (deposits, transfers in, refunds).
-- "balance" is the running balance printed on the statement after that specific transaction, as a plain number.
+- "a" (amount) is always a positive number. Never put a minus sign or negative number here — use the "dir" field for that instead.
+- "dir" is "debit" for money leaving the account (withdrawals, purchases, fees, transfers out) and "credit" for money coming in (deposits, transfers in, refunds).
+- "b" (balance) is the running balance printed on the statement after that specific transaction, as a plain number.
 - If this chunk has no transaction rows on it (e.g. a cover page), return an empty array. Do not invent rows.`;
 
   if (text) {
@@ -209,15 +209,15 @@ export async function POST(req: Request) {
     }
 
     const finalizedRows = masterTransactions.map((tx, index) => {
-      const amount = typeof tx.amount === 'number' ? tx.amount : parseFloat(tx.amount) || 0;
-      const balance = typeof tx.balance === 'number' ? tx.balance : parseFloat(tx.balance) || 0;
-      const signedAmount = tx.direction === 'debit' ? -Math.abs(amount) : Math.abs(amount);
+      const amount = typeof tx.a === 'number' ? tx.a : parseFloat(tx.a) || 0;
+      const balance = typeof tx.b === 'number' ? tx.b : parseFloat(tx.b) || 0;
+      const signedAmount = tx.dir === 'debit' ? -Math.abs(amount) : Math.abs(amount);
 
       return {
         id: index + 1,
-        date: tx.date || '',
-        type: tx.type || 'Transaction',
-        description: tx.description || '',
+        date: tx.d || '',
+        type: tx.t || 'Transaction',
+        description: tx.desc || '',
         amount: formatMoney(signedAmount),
         balance: formatMoney(balance),
       };
