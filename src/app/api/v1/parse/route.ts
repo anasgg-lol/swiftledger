@@ -49,16 +49,10 @@ export async function POST(req: Request) {
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) {
-      return NextResponse.json(
-        { success: false, error: 'No file uploaded' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'No file uploaded' }, { status: 400 });
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        { success: false, error: 'File exceeds 10MB' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'File exceeds 10MB' }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
@@ -79,29 +73,54 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey });
     const base64Data = rawBuffer.toString('base64');
 
-    // 🔥 USE GEMINI 2.0 FLASH – 2x FASTER
-    const model = 'gemini-2.0-flash-lite-preview-09-2024'; // or 'gemini-2.0-flash-exp'
+    // 🔥 MODEL LIST – STABLE & FAST
+    const models = [
+      'gemini-1.5-flash',        // Fastest stable
+      'gemini-1.5-flash-lite',    // Even faster
+      'gemini-1.5-pro',           // Fallback
+    ];
 
-    // 🔥 SUPER SHORT PROMPT
     const prompt = 'Extract all financial transactions as JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}';
 
-    const result = await ai.models.generateContent({
-      model: model,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            { inlineData: { data: base64Data, mimeType: mimeType } }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 2048,
-        temperature: 0,
-      },
-    });
+    let result = null;
+    let modelUsed = '';
+
+    for (const model of models) {
+      try {
+        console.log(`🔄 Trying model: ${model}`);
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: prompt },
+                { inlineData: { data: base64Data, mimeType: mimeType } }
+              ]
+            }
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            maxOutputTokens: 2048,
+            temperature: 0,
+          },
+        });
+        result = response;
+        modelUsed = model;
+        console.log(`✅ Success with model: ${model}`);
+        break;
+      } catch (error: any) {
+        console.warn(`⚠️ Model ${model} failed:`, error.message || error);
+        // Continue to next model
+      }
+    }
+
+    if (!result) {
+      return NextResponse.json(
+        { success: false, error: 'All Gemini models failed. Check API key.' },
+        { status: 500 }
+      );
+    }
 
     const text = result.text || '[]';
     const rows = cleanAndParseJSON(text);
@@ -110,6 +129,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       filename: file.name,
+      engine_used: modelUsed,
       total_transactions: transactions.length,
       page_count: pageCount,
       rows: transactions,
