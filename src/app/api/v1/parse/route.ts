@@ -9,7 +9,7 @@ export const config = {
 };
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
-const PAGE_CHUNK_SIZE = 6;      // pages per Gemini call — small enough that output truncation basically can't happen
+const PAGE_CHUNK_SIZE = 3;      // pages per Gemini call — small enough that output truncation basically can't happen
 const CONCURRENCY = 5;          // parallel Gemini calls in-flight at once — tune against your Gemini tier's RPM limit
 
 // Strict schema — the model CANNOT return malformed rows, missing fields, or free text.
@@ -115,24 +115,23 @@ async function callGemini(
   ai: GoogleGenAI,
   prepared: { base64: string; text: string }
 ): Promise<{ rows: any[]; error?: string }> {
-  const useDigitalText = prepared.text.trim().length > 50;
-
-  const contents = useDigitalText
-    ? [{ text: buildExtractionPrompt(prepared.text) }]
-    : [
-        { text: buildExtractionPrompt(null) },
-        { inlineData: { data: prepared.base64, mimeType: 'application/pdf' } },
-      ];
-
+  const t0 = Date.now();
   try {
+    const useDigitalText = prepared.text.trim().length > 50;
+
+    const contents = useDigitalText
+      ? [{ text: buildExtractionPrompt(prepared.text) }]
+      : [
+          { text: buildExtractionPrompt(null) },
+          { inlineData: { data: prepared.base64, mimeType: 'application/pdf' } },
+        ];
+
     const response = await withRetry(() =>
       ai.models.generateContent({
         model: 'gemini-3.6-flash',
         contents,
         config: {
-          // 'low' = fast, but still enough reasoning headroom to get sign/rows right.
-          // The JSON schema below is doing most of the accuracy work now, not the thinking.
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
           responseMimeType: 'application/json',
           responseJsonSchema: TRANSACTION_SCHEMA,
         },
@@ -144,6 +143,8 @@ async function callGemini(
   } catch (err: any) {
     console.error('Chunk extraction failed:', err?.message);
     return { rows: [], error: err?.message || 'unknown error' };
+  } finally {
+    console.log(`⏱ chunk took ${Date.now() - t0}ms`);
   }
 }
 
