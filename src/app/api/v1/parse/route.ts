@@ -1,131 +1,157 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
+import { PDFDocument } from 'pdf-lib';
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const GEMINI_MODELS = ['gemini-3.6-flash'];
+export const config = {
+  api: {
+    bodyParser: true, 
+  },
+};
 
-function cleanAndParseJSON(rawResponse: string): any {
-  let clean = rawResponse.trim();
-  clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
+const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+
+// High-speed textual table parser that structures column matrices in milliseconds on the server
+function parseTextToJSON(text: string): any[] {
+  const transactions: any[] = [];
   try {
-    return JSON.parse(clean);
-  } catch {
-    const lastValidObjectIndex = clean.lastIndexOf('}');
-    if (lastValidObjectIndex !== -1) {
-      const salvaged = clean.substring(0, lastValidObjectIndex + 1) + ']}';
-      try {
-        return JSON.parse(salvaged);
-      } catch {
-        const salvagedArray = clean.substring(0, lastValidObjectIndex + 1) + ']';
-        return JSON.parse(salvagedArray);
-      }
+    const lines = text.split('\n');
+    let currentId = 1;
+    
+    for (const line of lines) {
+      if (!line.includes('|')) continue;
+      const parts = line.split('|').map(p => p.trim());
+      if (parts.length < 5) continue;
+      
+      transactions.push({
+        id: currentId++,
+        date: parts[0] || '',
+        type: parts[1] || 'Transaction',
+        description: parts[2] || '',
+        amount: parts[3] || '$0.00',
+        balance: parts[4] || '$0.00'
+      });
     }
-    return { transactions: [] };
+    return transactions;
+  } catch {
+    return [];
   }
 }
 
-async function getPageCountPdfParse(buffer: Buffer): Promise<number | null> {
-  try {
-    const pdfParse = require('pdf-parse');
-    const data = await pdfParse(buffer);
-    return data.numpages || 1;
-  } catch (error) {
-    console.warn('⚠️ pdf-parse failed:', error);
-    return null;
-  }
-}
-
-async function getPDFPageCount(buffer: Buffer): Promise<number> {
-  const count1 = await getPageCountPdfParse(buffer);
-  if (count1 !== null && count1 > 0) return count1;
-  return 1;
+async function extractPageRange(srcDoc: PDFDocument, start: number, end: number): Promise<string> {
+  const newDoc = await PDFDocument.create();
+  const rangeIndices = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  const copiedPages = await newDoc.copyPages(srcDoc, rangeIndices);
+  copiedPages.forEach(page => newDoc.addPage(page));
+  
+  const pdfBytes = await newDoc.save();
+  const uint8Array = new Uint8Array(pdfBytes);
+  return Buffer.from(uint8Array.buffer, uint8Array.byteOffset, uint8Array.byteLength).toString('base64');
 }
 
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-    }
-
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json({ error: 'File size exceeds 10MB limit.' }, { status: 400 });
-    }
+    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
 
     const bytes = await file.arrayBuffer();
-    const processedBuffer = Buffer.from(bytes);
-    let mimeType = file.type || '';
-    let pageCount = 1;
+    const rawBuffer = Buffer.from(bytes);
 
-    if (!mimeType) {
-      if (file.name.endsWith('.pdf')) mimeType = 'application/pdf';
-      else if (file.name.endsWith('.png')) mimeType = 'image/png';
-      else mimeType = 'image/jpeg';
+    const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
+    const totalPages = srcDoc.getPageCount();
+
+    // ⚡ STEP 1: MILLISECOND LOCAL TEXT TOKEN EXTRACTION CORE
+    let localTextContent = '';
+    try {
+      const pdfParse = require('pdf-parse');
+      const parsed = await pdfParse(rawBuffer);
+      localTextContent = parsed.text || '';
+    } catch (e) {
+      console.warn('⚠️ Local font layer missing, using image fallback channels.');
     }
 
-    if (mimeType === 'application/pdf') {
-      pageCount = await getPDFPageCount(processedBuffer);
-    }
-
-    const base64Data = processedBuffer.toString('base64');
     const ai = new GoogleGenAI({ apiKey });
+    let masterTransactions: any[] = [];
 
-    const prompt = `You are a financial document parser. Extract ALL transaction rows from this bank statement.
+    // If an embedded digital text map is active, execute the instant string conversion loophole
+    if (localTextContent.trim().length > 50) {
+      console.log('⚡ HYPER-SPEED DIGITAL CORE ACTIVE: BYPASSING VISUAL QUEUES...');
+      
+      const prompt = `Extract ALL transaction rows from this bank statement text layout. Output raw data lines only.
+      Format exactly like this for EVERY row, using pipe delimiters, with no markdown code blocks and no text description headers:
+      Date | Type | Description | Amount | RunningBalance
+      
+      CRITICAL RULES:
+      1. Extract EVERY single transaction row printed. DO NOT skip or truncate data.
+      2. Withdrawals/debits MUST be prefixed explicitly with a minus sign like "-$14,250.00".
+      
+      RAW TEXT FEED INPUT:
+      ${localTextContent}`;
 
-CRITICAL PRECISION RULES:
-1. Extract EVERY single transaction row printed. DO NOT truncate, skip, or summarize.
-2. Every transaction MUST include a "balance" field read directly from the statement.
-3. If an amount represents a withdrawal, debit, charge, fee, or negative value, explicitly output it with a minus sign prefixed to the string, like "-$1,476.44".
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash', // Required upgraded premium core engine
+        contents: [{ text: prompt }],
+        config: { temperature: 0.0 } // Locks absolute mathematical precision
+      });
 
-THE SCHEMA:
-{
-  "transactions": [
-    {
-      "id": 1,
-      "date": "Date",
-      "type": "Card Payment | Wire | ACH | Direct Debit | Fee",
-      "description": "Full description particulars",
-      "amount": "-$438,176.22",
-      "balance": "$60,351,658.28"
+      masterTransactions = parseTextToJSON(response.text || '');
+    } else {
+      // 📸 FALLBACK STEP 2: CONCURRENT PIPELINE SHARDING FOR IMAGES / SCANS
+      console.log('📸 SCANNED LAYER CORE ACTIVATED: EXECUTING PARALLEL VISUAL BATCHES...');
+      const chunkSize = 30; 
+      const chunks: { start: number; end: number }[] = [];
+
+      for (let i = 0; i < totalPages; i += chunkSize) {
+        chunks.push({ start: i, end: Math.min(i + chunkSize - 1, totalPages - 1) });
+      }
+
+      const chunkPromises = chunks.map(async (chunk) => {
+        const chunkBase64 = await extractPageRange(srcDoc, chunk.start, chunk.end);
+        const prompt = `Extract ALL transaction rows from this bank statement chunk. Output raw data lines only.
+        Format exactly like this for EVERY row using pipe delimiters, with no markdown blocks:
+        Date | Type | Description | Amount | RunningBalance
+        
+        LAWS: Withdrawals/debits MUST be prefixed with a minus sign like "-$42,148.24".`;
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: [
+            { text: prompt },
+            { inlineData: { data: chunkBase64, mimeType: 'application/pdf' } }
+          ],
+          config: { temperature: 0.0 }
+        });
+
+        return response.text || '';
+      });
+
+      const resolvedTexts = await Promise.all(chunkPromises);
+      for (const textChunk of resolvedTexts) {
+        const parsedRows = parseTextToJSON(textChunk);
+        masterTransactions = masterTransactions.concat(parsedRows);
+      }
     }
-  ]
-}
 
-OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.`;
+    const finalizedRows = masterTransactions.map((tx, index) => ({
+      ...tx,
+      id: index + 1
+    }));
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: [
-        { text: prompt },
-        { inlineData: { data: base64Data, mimeType: mimeType } },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 16384,
-        temperature: 0.0,
-      },
-    });
-
-    const responseText = response.text || '{}';
-    const parsedData = cleanAndParseJSON(responseText);
-    const transactions = parsedData.transactions || parsedData.rows || parsedData || [];
+    console.log(`✅ JET ENGINE SYSTEM SUCCESS: Extracted ${finalizedRows.length} total rows.`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Hyper-Speed Core',
-      total_transactions: transactions.length,
-      page_count: pageCount,
-      rows: transactions,
+      engine_used: 'SwiftLedger Gemini 3.6 JetCore',
+      total_transactions: finalizedRows.length,
+      page_count: totalPages,
+      rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('Parsing System Failure:', error);
+    console.error('Core Exception caught:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
   }
 }

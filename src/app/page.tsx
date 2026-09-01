@@ -27,6 +27,7 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
 // ✅ PASTE THIS PROVEN ACCOUNTING BALANCE PARSER REPLACEMENT SNIPPET:
 // 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
 // ✅ PASTE THIS FULLY HARDENED DATA SHIELD SNIPPET:
+// ✅ PASTE THIS PROVEN ACCOUNTING BALANCE PARSER REPLACEMENT SNIPPET:
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const trimmed = value.trim();
@@ -49,7 +50,7 @@ function parseCurrency(value: string): number {
 // Enforces correct mathematical states for all balance logs and debit filters
 function getSignedAmount(row: Transaction): number {
   const amount = parseCurrency(row.amount);
-  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS'];
+  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS', 'WIRE OUT'];
   
   // Force conversion to negative if amount is positive but matches a known withdrawal keyword
   if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
@@ -57,6 +58,7 @@ function getSignedAmount(row: Transaction): number {
   }
   return amount;
 }
+
 
 
 
