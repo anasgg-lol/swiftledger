@@ -1,237 +1,301 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
+import sharp from 'sharp';
 import { PDFDocument } from 'pdf-lib';
 
-export const config = {
-  api: {
-    bodyParser: true,
-  },
-};
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
-const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
-const PAGE_CHUNK_SIZE = 4;   // pages per Gemini call
-const CONCURRENCY = 8;       // parallel calls in-flight at once
+const GEMINI_MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-3.6-flash',
+  'gemini-3.7-flash',
+];
 
-const TRANSACTION_SCHEMA = {
-  type: Type.ARRAY,
-  items: {
-    type: Type.OBJECT,
-    properties: {
-      d: { type: Type.STRING, description: 'Transaction date exactly as printed on the statement' },
-      t: { type: Type.STRING, description: 'Transaction category as printed, e.g. "ATM Withdrawal", "Direct Deposit"' },
-      desc: { type: Type.STRING, description: 'Full transaction description/memo line, exactly as printed (join wrapped lines into one)' },
-      a: { type: Type.NUMBER, description: 'Absolute value of the transaction amount. Always positive, never negative.' },
-      dir: {
-        type: Type.STRING,
-        enum: ['debit', 'credit'],
-        description: '"debit" if money left the account (withdrawal, purchase, fee, transfer out, negative sign printed). "credit" if money was added (deposit, transfer in, refund, positive sign printed).',
-      },
-      b: { type: Type.NUMBER, description: 'Running balance printed on the statement immediately after this transaction' },
-    },
-    required: ['d', 'desc', 'a', 'dir', 'b'],
-    propertyOrdering: ['d', 't', 'desc', 'a', 'dir', 'b'],
-  },
-};
-
-function buildExtractionPrompt(text: string | null): string {
-  const instructions = `You are extracting transaction rows from a bank statement.
-
-Extract EVERY transaction row — including the very first and very last row. Some rows wrap their description onto a second line before the amount/balance appear; treat those as ONE row, not two, and join the wrapped text into a single "desc".
-
-Rules:
-- "a" (amount) is always a positive number. Never put a minus sign here — use "dir" instead.
-- "dir" is "debit" for money leaving the account and "credit" for money coming in, matching whatever sign/notation is printed next to the amount.
-- "b" (balance) is the running balance printed on the statement after that specific transaction.
-- Do not skip a row just because it wraps across lines. Do not invent rows that aren't there.`;
-
-  if (text) {
-    return `${instructions}\n\nSTATEMENT TEXT:\n${text}`;
+// ============ JSON SALVAGE ============
+function cleanAndParseJSON(rawResponse: string): any {
+  let clean = rawResponse.trim();
+  clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
+  try {
+    return JSON.parse(clean);
+  } catch {
+    const lastValidObjectIndex = clean.lastIndexOf('}');
+    if (lastValidObjectIndex !== -1) {
+      const salvaged = clean.substring(0, lastValidObjectIndex + 1) + ']}';
+      try {
+        return JSON.parse(salvaged);
+      } catch {
+        const salvagedArray = clean.substring(0, lastValidObjectIndex + 1) + ']';
+        return JSON.parse(salvagedArray);
+      }
+    }
+    throw new Error('Could not parse or salvage JSON output.');
   }
-  return `${instructions}\n\nThe statement pages are attached as a PDF below. Read them visually.`;
 }
 
-function formatMoney(value: number): string {
-  const sign = value < 0 ? '-' : '';
-  return `${sign}$${Math.abs(value).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+// ============ TRIPLE-ENGINE PAGE COUNT ============
+async function getPDFPageCount(buffer: Buffer): Promise<number> {
+  // Try 1: pdf-lib (fastest)
+  try {
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const count = pdfDoc.getPageCount();
+    console.log(`📄 pdf-lib page count: ${count}`);
+    if (count > 0) return count;
+  } catch (error) {
+    console.warn('⚠️ pdf-lib failed:', error);
+  }
+
+  // Try 2: pdf-parse (reliable)
+  try {
+    const pdfParseModule = await import('pdf-parse');
+    const pdfParse = (pdfParseModule as any).default || pdfParseModule;
+    const data = await pdfParse(buffer);
+    const count = data.numpages;
+    console.log(`📄 pdf-parse page count: ${count}`);
+    if (count > 0) return count;
+  } catch (error) {
+    console.warn('⚠️ pdf-parse failed:', error);
+  }
+
+  // Try 3: pdfjs-dist (fallback)
+  try {
+    const pdfjsLib = await import('pdfjs-dist');
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const count = pdf.numPages;
+    console.log(`📄 pdfjs-dist page count: ${count}`);
+    if (count > 0) return count;
+  } catch (error) {
+    console.warn('⚠️ pdfjs-dist failed:', error);
+  }
+
+  // Final fallback: estimate from file size
+  const estimatedPages = Math.max(1, Math.floor(buffer.length / 10000));
+  console.log(`📄 Estimated page count: ${estimatedPages}`);
+  return estimatedPages;
 }
 
-async function buildPageChunk(
-  srcDoc: PDFDocument,
-  start: number,
-  end: number
-): Promise<{ base64: string; buffer: Buffer }> {
-  const newDoc = await PDFDocument.create();
-  const rangeIndices = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-  const copiedPages = await newDoc.copyPages(srcDoc, rangeIndices);
-  copiedPages.forEach((page) => newDoc.addPage(page));
-
-  const pdfBytes = await newDoc.save();
-  const buffer = Buffer.from(pdfBytes);
-  return { base64: buffer.toString('base64'), buffer };
-}
-
-async function withRetry<T>(fn: () => Promise<T>, attempts = 2): Promise<T> {
-  let lastErr: any;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (i < attempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 400 * (i + 1)));
+// ============ GEMINI FALLBACK ============
+async function generateWithFallback(ai: GoogleGenAI, requestPayload: any) {
+  let lastError: any = null;
+  for (const modelName of GEMINI_MODELS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          ...requestPayload,
+          model: modelName,
+        });
+        return { response, modelUsed: modelName };
+      } catch (error: any) {
+        lastError = error;
+        const isHighDemandOrRateLimit =
+          error?.status === 429 ||
+          error?.status === 503 ||
+          String(error).includes('high demand') ||
+          String(error).includes('RESOURCE_EXHAUSTED');
+        if (isHighDemandOrRateLimit && attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        } else {
+          break;
+        }
       }
     }
   }
-  throw lastErr;
+  throw lastError || new Error('All Gemini model endpoints failed.');
 }
 
-async function runWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let cursor = 0;
-
-  async function next(): Promise<void> {
-    const current = cursor++;
-    if (current >= items.length) return;
-    results[current] = await worker(items[current]);
-    return next();
-  }
-
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => next());
-  await Promise.all(workers);
-  return results;
-}
-
-async function callGemini(
-  ai: GoogleGenAI,
-  prepared: { base64: string; text: string }
-): Promise<{ rows: any[]; error?: string }> {
-  const t0 = Date.now();
-  try {
-    const useDigitalText = prepared.text.trim().length > 50;
-
-    const contents = useDigitalText
-      ? [{ text: buildExtractionPrompt(prepared.text) }]
-      : [
-          { text: buildExtractionPrompt(null) },
-          { inlineData: { data: prepared.base64, mimeType: 'application/pdf' } },
-        ];
-
-    const response = await withRetry(() =>
-      ai.models.generateContent({
-        model: 'gemini-3.5-flash-lite',
-        contents,
-        config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-          responseMimeType: 'application/json',
-          responseJsonSchema: TRANSACTION_SCHEMA,
-        },
-      })
-    );
-
-    const parsed = JSON.parse(response.text || '[]');
-    return { rows: Array.isArray(parsed) ? parsed : [] };
-  } catch (err: any) {
-    console.error('Chunk extraction failed:', err?.message);
-    return { rows: [], error: err?.message || 'unknown error' };
-  } finally {
-    console.log(`⏱ chunk took ${Date.now() - t0}ms`);
-  }
-}
-
+// ============ MAIN POST HANDLER ============
 export async function POST(req: Request) {
   try {
+    console.log('🚀 API route called');
+
+    // 1. API Key
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
-
-    const formData = await req.formData();
-    const file = formData.get('file') as File;
-    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-
-    if (file.size > MAX_FILE_SIZE_BYTES) {
+    if (!apiKey) {
+      console.error('❌ GEMINI_API_KEY is missing');
       return NextResponse.json(
-        { error: `File exceeds the ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB limit.` },
+        { success: false, error: 'GEMINI_API_KEY is missing from .env.local.' },
+        { status: 500 }
+      );
+    }
+    console.log('✅ API key found');
+
+    // 2. Parse FormData
+    let formData;
+    try {
+      formData = await req.formData();
+    } catch (formError) {
+      console.error('❌ Failed to parse form data:', formError);
+      return NextResponse.json(
+        { success: false, error: 'Invalid form data' },
         { status: 400 }
       );
     }
 
+    const file = formData.get('file') as File;
+    if (!file) {
+      console.error('❌ No file uploaded');
+      return NextResponse.json(
+        { success: false, error: 'No file uploaded' },
+        { status: 400 }
+      );
+    }
+    console.log(`📁 File received: ${file.name}, size: ${file.size} bytes`);
+
+    // 3. Validate File Size
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      console.error(`❌ File too large: ${file.size}`);
+      return NextResponse.json(
+        { success: false, error: 'File size exceeds 10MB limit.' },
+        { status: 400 }
+      );
+    }
+
+    // 4. Process File
     const bytes = await file.arrayBuffer();
     const rawBuffer = Buffer.from(bytes);
+    console.log(`📦 Buffer created: ${rawBuffer.length} bytes`);
 
-    const srcDoc = await PDFDocument.load(rawBuffer, { ignoreEncryption: true });
-    const totalPages = srcDoc.getPageCount();
+    let processedBuffer = rawBuffer;
+    let mimeType = file.type || '';
+    let pageCount = 1;
 
-    if (totalPages === 0) {
-      return NextResponse.json({ error: 'PDF has no pages.' }, { status: 400 });
+    if (!mimeType) {
+      if (file.name.endsWith('.pdf')) mimeType = 'application/pdf';
+      else if (file.name.endsWith('.png')) mimeType = 'image/png';
+      else mimeType = 'image/jpeg';
+    }
+    console.log(`📋 MIME type: ${mimeType}`);
+
+    // 5. Get Page Count
+    if (mimeType === 'application/pdf') {
+      try {
+        pageCount = await getPDFPageCount(rawBuffer);
+        console.log(`✅ Final page count: ${pageCount}`);
+      } catch (pdfError) {
+        console.error('❌ PDF page count failed:', pdfError);
+        pageCount = 1;
+      }
     }
 
+    // 6. Process Images with Sharp
+    if (mimeType.startsWith('image/')) {
+      try {
+        processedBuffer = await sharp(rawBuffer)
+          .rotate()
+          .resize({ width: 1600, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        mimeType = 'image/jpeg';
+        console.log(`✅ Image processed: ${processedBuffer.length} bytes`);
+      } catch (sharpError) {
+        console.error('❌ Sharp processing failed:', sharpError);
+        processedBuffer = rawBuffer;
+      }
+    }
+
+    // 7. Encode to Base64
+    const base64Data = processedBuffer.toString('base64');
+    console.log(`📤 Base64 data length: ${base64Data.length}`);
+
+    // 8. Call Gemini
+    console.log('🤖 Initializing Gemini...');
     const ai = new GoogleGenAI({ apiKey });
 
-    const chunkRanges: { start: number; end: number }[] = [];
-    for (let i = 0; i < totalPages; i += PAGE_CHUNK_SIZE) {
-      chunkRanges.push({ start: i, end: Math.min(i + PAGE_CHUNK_SIZE - 1, totalPages - 1) });
+    const prompt = `Extract ALL financial transactions from this document into a JSON object matching this exact schema:
+{
+  "transactions": [
+    {
+      "id": 1,
+      "date": "1st November 2018",
+      "type": "Card Payment | Direct Debit | Bank Credit | Cashpoint | Standing Order",
+      "description": "Clean description",
+      "amount": "£10.00",
+      "balance": "£500.00"
+    }
+  ]
+}`;
+
+    let response, modelUsed;
+    try {
+      const result = await generateWithFallback(ai, {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: mimeType,
+                },
+              },
+            ],
+          },
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 4096,
+          temperature: 0.1,
+        },
+      });
+      response = result.response;
+      modelUsed = result.modelUsed;
+      console.log(`✅ Gemini succeeded with: ${modelUsed}`);
+    } catch (geminiError: any) {
+      console.error('❌ All Gemini models failed:', geminiError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Gemini processing failed: ${geminiError?.message || 'Unknown error'}`,
+        },
+        { status: 500 }
+      );
     }
 
-    const preparedChunks: { base64: string; text: string }[] = [];
-    for (const range of chunkRanges) {
-      const { base64, buffer } = await buildPageChunk(srcDoc, range.start, range.end);
-      let chunkText = '';
-      try {
-        const pdfParse = require('pdf-parse');
-        const parsed = await pdfParse(buffer);
-        chunkText = parsed.text || '';
-      } catch {
-        console.warn(`⚠️ No embedded text layer for pages ${range.start}-${range.end}, using visual extraction.`);
-      }
-      preparedChunks.push({ base64, text: chunkText });
+    // 9. Parse Response
+    const responseText = response.text || '{}';
+    console.log(`📥 Gemini response length: ${responseText.length}`);
+
+    let parsedData;
+    try {
+      parsedData = cleanAndParseJSON(responseText);
+    } catch (parseError: any) {
+      console.error('❌ Failed to parse Gemini response:', parseError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Failed to parse Gemini response: ${parseError?.message || 'Unknown error'}`,
+          raw: responseText.substring(0, 500),
+        },
+        { status: 500 }
+      );
     }
 
-    const chunkResults = await runWithConcurrency(preparedChunks, CONCURRENCY, (prepared) =>
-      callGemini(ai, prepared)
-    );
+    // 10. Extract Transactions
+    const transactions = Array.isArray(parsedData)
+      ? parsedData
+      : parsedData.transactions || parsedData.rows || Object.values(parsedData)[0] || [];
 
-    const masterTransactions: any[] = [];
-    let failedChunks = 0;
-    for (const result of chunkResults) {
-      if (result.error) failedChunks++;
-      masterTransactions.push(...result.rows);
-    }
+    console.log(`✅ Returning ${transactions.length} transactions, page_count: ${pageCount}`);
 
-    const finalizedRows = masterTransactions.map((tx, index) => {
-      const amount = typeof tx.a === 'number' ? tx.a : parseFloat(tx.a) || 0;
-      const balance = typeof tx.b === 'number' ? tx.b : parseFloat(tx.b) || 0;
-      const signedAmount = tx.dir === 'debit' ? -Math.abs(amount) : Math.abs(amount);
-
-      return {
-        id: index + 1,
-        date: tx.d || '',
-        type: tx.t || 'Transaction',
-        description: tx.desc || '',
-        amount: formatMoney(signedAmount),
-        balance: formatMoney(balance),
-      };
-    });
-
-    console.log(
-      `✅ Extracted ${finalizedRows.length} rows from ${totalPages} page(s) across ${chunkRanges.length} chunk(s)` +
-        (failedChunks ? `, ${failedChunks} chunk(s) failed.` : '.')
-    );
-
+    // 11. Return Response
     return NextResponse.json({
       success: true,
       filename: file.name,
-      engine_used: 'SwiftLedger Gemini 3.5 Flash-Lite',
-      total_transactions: finalizedRows.length,
-      page_count: totalPages,
-      rows: finalizedRows,
-      ...(failedChunks
-        ? { warning: `${failedChunks} of ${chunkRanges.length} page-chunk(s) failed to parse and were skipped.` }
-        : {}),
+      engine_used: `Gemini (${modelUsed})`,
+      total_transactions: transactions.length,
+      page_count: pageCount,
+      rows: transactions,
     });
   } catch (error: any) {
-    console.error('Core Exception caught:', error);
-    return NextResponse.json({ success: false, error: error?.message || 'Parsing failed' }, { status: 500 });
+    console.error('❌ UNHANDLED ERROR in API route:', error);
+    console.error('❌ Error stack:', error?.stack);
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Server error: ${error?.message || 'Unknown error'}`,
+        details: error?.stack || 'No stack trace',
+      },
+      { status: 500 }
+    );
   }
 }
