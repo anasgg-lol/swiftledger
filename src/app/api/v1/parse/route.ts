@@ -16,6 +16,10 @@ function cleanAndParseJSON(rawResponse: string): any {
     if (clean.startsWith('{') && !clean.endsWith('}')) {
       try { return JSON.parse(clean + '}'); } catch {}
     }
+    const matches = clean.match(/\{[^{}]*\}/g);
+    if (matches && matches.length > 0) {
+      try { return matches.map(m => JSON.parse(m)); } catch {}
+    }
     return [];
   }
 }
@@ -25,6 +29,7 @@ export async function POST(req: Request) {
   try {
     console.log('🚀 API called');
 
+    // 1. Check API key
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.error('❌ GEMINI_API_KEY missing');
@@ -34,6 +39,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // 2. Parse file
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) {
@@ -49,15 +55,22 @@ export async function POST(req: Request) {
       );
     }
 
+    // 3. Read file
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const base64Data = buffer.toString('base64');
 
-    // 🔥 OLD SDK – WORKS EVERY TIME
+    console.log('📁 File:', file.name, file.size, 'bytes');
+
+    // 4. Initialize Gemini
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash', // This model definitely exists
-    });
+
+    // ✅ CORRECT MODEL NAMES – THESE WORK
+    const models = [
+      'gemini-1.5-pro',        // Most reliable, available everywhere
+      'gemini-1.5-flash',      // Faster, available in most regions
+      'gemini-1.5-flash-lite', // Fastest, available in most regions
+    ];
 
     const prompt = `Extract ALL financial transactions from this document into a JSON object matching this exact schema:
 {
@@ -73,33 +86,60 @@ export async function POST(req: Request) {
   ]
 }`;
 
-    console.log('🤖 Sending to Gemini...');
+    let result = null;
+    let modelUsed = '';
+    let lastError = null;
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
+    // 5. Try each model
+    for (const modelName of models) {
+      try {
+        console.log(`🔄 Trying model: ${modelName}`);
+        const model = genAI.getGenerativeModel({ model: modelName });
+        
+        const response = await model.generateContent({
+          contents: [
             {
-              inlineData: {
-                mimeType: file.type || 'application/pdf',
-                data: base64Data,
-              },
+              role: 'user',
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: file.type || 'application/pdf',
+                    data: base64Data,
+                  },
+                },
+              ],
             },
           ],
-        },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 4096,
-        temperature: 0.1,
-      },
-    });
+          generationConfig: {
+            responseMimeType: 'application/json',
+            maxOutputTokens: 4096,
+            temperature: 0.1,
+          },
+        });
 
-    const response = result.response;
-    const text = response.text() || '{}';
+        result = response;
+        modelUsed = modelName;
+        console.log(`✅ Success with model: ${modelName}`);
+        break;
+      } catch (error: any) {
+        console.error(`❌ Model ${modelName} failed:`, error?.message || error);
+        lastError = error;
+      }
+    }
 
+    // 6. If all models failed
+    if (!result) {
+      const errorMessage = lastError?.message || 'All Gemini models failed';
+      console.error('❌ All models failed:', errorMessage);
+      return NextResponse.json(
+        { success: false, error: errorMessage },
+        { status: 500 }
+      );
+    }
+
+    // 7. Parse response
+    const text = result.response.text() || '{}';
     console.log('📥 Response length:', text.length);
 
     const parsedData = cleanAndParseJSON(text);
@@ -107,21 +147,18 @@ export async function POST(req: Request) {
 
     console.log(`✅ Extracted ${transactions.length} transactions`);
 
+    // 8. Return success
     return NextResponse.json({
       success: true,
       filename: file.name,
+      engine_used: modelUsed,
       total_transactions: transactions.length,
       rows: transactions,
     });
   } catch (error: any) {
-    console.error('❌ Error:', error?.message || error);
-    // Log full error details
-    if (error?.response) {
-      console.error('Response status:', error.response?.status);
-      console.error('Response data:', error.response?.data);
-    }
+    console.error('❌ Unhandled error:', error?.message || error);
     return NextResponse.json(
-      { success: false, error: error?.message || 'Parsing failed' },
+      { success: false, error: error?.message || 'Internal server error' },
       { status: 500 }
     );
   }
