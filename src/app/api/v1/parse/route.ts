@@ -1,9 +1,44 @@
 import { NextResponse } from 'next/server';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-// 🔥 LOCKED MODEL – PROVEN TO WORK
 const WORKING_MODEL = 'gemini-flash-lite-latest';
+
+// ============ BETTER JSON PARSING ============
+function parseGeminiResponse(text: string): any[] {
+  let clean = text.trim();
+  clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
+  
+  // Try direct parse
+  try {
+    const parsed = JSON.parse(clean);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed.transactions) return parsed.transactions;
+    if (parsed.rows) return parsed.rows;
+    for (const key of Object.keys(parsed)) {
+      if (Array.isArray(parsed[key]) && parsed[key].length > 0) {
+        return parsed[key];
+      }
+    }
+    return [];
+  } catch {
+    // 🔥 FIXED: Removed 's' flag, using [\s\S]* instead
+    const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    if (arrayMatch) {
+      try {
+        const extracted = JSON.parse(arrayMatch[0]);
+        if (Array.isArray(extracted)) return extracted;
+      } catch {}
+    }
+    const objectMatches = clean.match(/\{[^{}]*\}/g);
+    if (objectMatches && objectMatches.length > 0) {
+      try {
+        const objects = objectMatches.map(m => JSON.parse(m));
+        return objects;
+      } catch {}
+    }
+    return [];
+  }
+}
 
 // ============ MAIN POST ============
 export async function POST(req: Request) {
@@ -41,10 +76,9 @@ export async function POST(req: Request) {
 
     console.log('📁 File:', file.name, file.size);
 
-    // 🔥 DIRECT FETCH WITH LOCKED MODEL
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
+    const prompt = `Extract ALL financial transactions. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
 
-    const prompt = `Extract ALL financial transactions into JSON array. Each object: {"id":1,"date":"date","type":"Card Payment|Direct Debit|Bank Credit|Cashpoint|Standing Order","description":"desc","amount":"$10.00","balance":"$500.00"}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
 
     console.log(`🔄 Using locked model: ${WORKING_MODEL}`);
 
@@ -68,8 +102,8 @@ export async function POST(req: Request) {
         ],
         generationConfig: {
           responseMimeType: 'application/json',
-          maxOutputTokens: 4096,
-          temperature: 0.1,
+          maxOutputTokens: 2048,
+          temperature: 0,
         },
       }),
     });
@@ -78,7 +112,7 @@ export async function POST(req: Request) {
       const errorText = await response.text();
       console.error('❌ Gemini API error:', errorText);
       return NextResponse.json(
-        { success: false, error: `Gemini API: ${response.status} ${errorText}` },
+        { success: false, error: `Gemini API: ${response.status}` },
         { status: response.status }
       );
     }
@@ -87,22 +121,7 @@ export async function POST(req: Request) {
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     console.log('📥 Response length:', text.length);
 
-    let parsedData;
-    try {
-      parsedData = JSON.parse(text);
-    } catch {
-      let clean = text.trim();
-      if (clean.startsWith('[') && !clean.endsWith(']')) {
-        try { parsedData = JSON.parse(clean + ']'); } catch { parsedData = []; }
-      } else if (clean.startsWith('{') && !clean.endsWith('}')) {
-        try { parsedData = JSON.parse(clean + '}'); } catch { parsedData = []; }
-      } else {
-        parsedData = [];
-      }
-    }
-
-    const transactions = Array.isArray(parsedData) ? parsedData : parsedData.transactions || parsedData.rows || [];
-
+    const transactions = parseGeminiResponse(text);
     console.log(`✅ Extracted ${transactions.length} transactions`);
 
     return NextResponse.json({
