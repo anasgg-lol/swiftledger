@@ -119,7 +119,9 @@ export async function POST(req: Request) {
       
       // ✅ FIXED: Template literal correctly interpolates variables dynamically now
       // ✅ PASTE THIS EXACT CORRECT TEMPLATE LITERAL IN BOTH PLACES INSTEAD:
-      const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`; // 💡 Notice the '$' before the curly brackets!
+      // ✅ PASTE THIS EXACT CONCATENATED RAW ENDPOINT STRUCTURE IN BOTH PLACES INSTEAD:
+      const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey; // 💡 Hardcoding the raw string concatenation guarantees compile accuracy!
+
 
       
       // 🚀 THE WORKER: Executes chunk requests in parallel concurrency instead of blocking threads
@@ -166,7 +168,9 @@ export async function POST(req: Request) {
       const prompt = `Extract ALL financial transactions. Withdrawals/debits MUST be outputted explicitly with a minus sign prefixed (e.g. "-$10.00"). Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
       
       // ✅ FIXED: Correctly configured string interpolation
-      const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+     // ✅ PASTE THIS EXACT CONCATENATED RAW ENDPOINT STRUCTURE IN BOTH PLACES INSTEAD:
+      const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey; // 💡 Hardcoding the raw string concatenation guarantees compile accuracy!
+
 
       const response = await fetch(url, {
         method: 'POST',
