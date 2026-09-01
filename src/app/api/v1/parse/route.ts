@@ -40,58 +40,34 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
-    // 🔥 LIST OF WORKING MODELS
-    const models = [
-      'gemini-2.0-flash-exp',      // Latest, fastest
-      'gemini-1.5-pro',            // Reliable
-      'gemini-1.0-pro-vision',     // Fallback
-    ];
-
-    let result = null;
-    let modelUsed = '';
+    // 🔥 USE gemini-pro – ALWAYS AVAILABLE
+    const modelName = 'gemini-pro';
+    console.log(`🔄 Using model: ${modelName}`);
+    const model = genAI.getGenerativeModel({ model: modelName });
 
     const prompt = `Extract ALL financial transactions into JSON array. Each object: {"id":1,"date":"date","type":"Card Payment|Direct Debit|Bank Credit|Cashpoint|Standing Order","description":"desc","amount":"$10.00","balance":"$500.00"}`;
 
-    for (const modelName of models) {
-      try {
-        console.log(`🔄 Trying model: ${modelName}`);
-        const model = genAI.getGenerativeModel({ model: modelName });
-        const response = await model.generateContent({
-          contents: [
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
             {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    mimeType: 'application/pdf',
-                    data: base64Data,
-                  },
-                },
-              ],
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: base64Data,
+              },
             },
           ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            maxOutputTokens: 4096,
-            temperature: 0.1,
-          },
-        });
-        result = response;
-        modelUsed = modelName;
-        console.log(`✅ Success with model: ${modelName}`);
-        break;
-      } catch (error: any) {
-        console.warn(`⚠️ Model ${modelName} failed:`, error.message || error);
-      }
-    }
-
-    if (!result) {
-      return NextResponse.json(
-        { success: false, error: 'All Gemini models failed. Check API key and billing.' },
-        { status: 500 }
-      );
-    }
+        },
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 4096,
+        temperature: 0.1,
+      },
+    });
 
     const text = result.response.text() || '[]';
     console.log('📥 Response length:', text.length);
@@ -112,14 +88,13 @@ export async function POST(req: Request) {
 
     const transactions = Array.isArray(parsedData) ? parsedData : parsedData.transactions || parsedData.rows || [];
 
-    console.log(`✅ Extracted ${transactions.length} transactions using ${modelUsed}`);
+    console.log(`✅ Extracted ${transactions.length} transactions`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
       total_transactions: transactions.length,
       page_count: 1,
-      engine_used: modelUsed,
       rows: transactions,
     });
   } catch (error: any) {
