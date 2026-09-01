@@ -16,18 +16,12 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
   { id: 1, date: '1st November 2026', type: 'Cashpoint', description: 'ATM in Central Station, 11:22am', amount: '-£10.00', balance: '£500.00' },
   { id: 2, date: '3rd November 2026', type: 'Direct Debit', description: 'Fiber Broadband Provider', amount: '-£95.00', balance: '£405.00' },
   { id: 3, date: '3rd November 2026', type: 'Card Payment', description: 'Cinema & Concessions', amount: '-£6.50', balance: '£398.50' },
-  { id: 4, date: '4th November 2026', type: 'Bank Credit', description: 'Transfer for Shared Expenses', amount: '£12.50', balance: '£411.00' },
+  { id: 4, date: '3rd November 2026', type: 'Bank Credit', description: 'Transfer for Shared Expenses', amount: '£12.50', balance: '£411.00' },
   { id: 5, date: '4th November 2026', type: 'Card Payment', description: 'EV Charging Station', amount: '-£10.00', balance: '£401.00' },
   { id: 6, date: '5th November 2026', type: 'Direct Debit', description: 'Fitness Club Membership', amount: '-£32.50', balance: '£368.50' },
 ];
 
-// 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
-// ✅ FULL REPLACEMENT BLOCK: COPY AND PASTE THIS EXACT SECTION
-// 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
-// ✅ PASTE THIS PROVEN ACCOUNTING BALANCE PARSER REPLACEMENT SNIPPET:
-// 🔥 HARDENED PROVEN ACCOUNTING CURRENCY PARSER
-// ✅ PASTE THIS FULLY HARDENED DATA SHIELD SNIPPET:
-// ✅ PASTE THIS PROVEN ACCOUNTING BALANCE PARSER REPLACEMENT SNIPPET:
+// ============ HARDENED CURRENCY PARSER ============
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const trimmed = value.trim();
@@ -53,15 +47,7 @@ function getSignedAmount(row: Transaction): number {
   return amount;
 }
 
-
-
-
-
-
-
-
-
-
+// ============ FORMAT GENERATORS ============
 function generateCSV(rows: Transaction[]): string {
   if (!rows.length) return '';
   const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
@@ -76,17 +62,13 @@ function generateCSV(rows: Transaction[]): string {
   return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
 }
 
-// ✅ WITH THIS HARDENED PRODUCTION FUNCTION:
-// ✅ FULL REPLACEMENT BLOCK: COPY AND PASTE THIS EXACT EXPORTER
 function generateXeroCSV(rows: Transaction[], bank: string = ''): string {
   if (!rows.length) return '';
   const headers = ['Date', 'Description', 'Amount', 'Balance', 'Bank'];
   const csvRows = rows.map((r) => {
-    // Retain explicit negative multipliers from our hardened backend format strings
     const isNegative = r.amount.startsWith('-');
     const numericAmount = Math.abs(parseCurrency(r.amount));
     const signedAmount = isNegative ? -numericAmount : numericAmount;
-
     return [
       r.date,
       `${r.description} (${r.type})`,
@@ -97,8 +79,6 @@ function generateXeroCSV(rows: Transaction[], bank: string = ''): string {
   });
   return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
 }
-
-
 
 function generateOFX(rows: Transaction[], bank: string = ''): string {
   if (!rows.length) return '';
@@ -229,6 +209,7 @@ function getPrice(pageCount: number): { price: number; label: string; tier: stri
   return { price: 85, label: 'Enterprise', tier: '51+ pages', badge: '🏢' };
 }
 
+// ============ MAIN COMPONENT ============
 export default function Home() {
   const [parsedData, setParsedData] = useState<Transaction[]>([]);
   const [fileName, setFileName] = useState<string>('');
@@ -251,16 +232,6 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const progressMessages = [
-    { time: 0, msg: '🔍 Scanning your statement...' },
-    { time: 2, msg: '🧠 AI is extracting transactions...' },
-    { time: 4, msg: '📊 Categorizing every entry...' },
-    { time: 6, msg: '🔢 Verifying running balances...' },
-    { time: 8, msg: '📁 Building your export files...' },
-    { time: 10, msg: '✨ Almost done...' },
-    { time: 12, msg: '✅ Your files are ready!' },
-  ];
-
   const formatLabels: Record<string, { label: string; desc: string; color: string }> = {
     csv: { label: '📊 Standard CSV', desc: 'Excel, Google Sheets', color: 'text-blue-400' },
     xero: { label: '📁 Xero Bank Feed', desc: 'Xero import ready', color: 'text-cyan-400' },
@@ -268,27 +239,17 @@ export default function Home() {
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
 
-  useEffect(() => {
-    const pending = sessionStorage.getItem('pendingDownload');
-    if (pending) {
-      try {
-        const data = JSON.parse(pending);
-        setPendingDownload(data);
-      } catch (e) {
-        console.error('Failed to parse pending download:', e);
-      }
-    }
-  }, []);
-
-    const handleFileUpload = async (file: File) => {
+  // ============ FILE UPLOAD ============
+  const handleFileUpload = async (file: File) => {
     setLoading(true);
     setFileName(file.name);
     setParsedData([]);
     setShowStats(false);
     setLoadingTime(0);
-    setProgressMessage('🔍 Initializing high-speed secure channel...');
+    setProgressMessage('🔍 Scanning your statement...');
 
-    const timer = setInterval(() => {
+    if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
+    loadingIntervalRef.current = setInterval(() => {
       setLoadingTime(prev => prev + 1);
     }, 1000);
 
@@ -296,83 +257,68 @@ export default function Home() {
       const formData = new FormData();
       formData.append('file', file);
 
-      // Hit the async backend route to instantly capture the tracking token
-      const initialRes = await fetch('/api/v1/parse', { method: 'POST', body: formData });
-      if (!initialRes.ok) throw new Error('Initial hand-shake transmission failed.');
+      const res = await fetch('/api/v1/parse', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || `Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
       
-      const initialData = await initialRes.json();
-      const token = initialData.token;
+      if (data.success) {
+        const rows = data.rows || [];
+        setParsedData(rows);
+        setCurrentPageCount(data.page_count || 1);
 
-      setProgressMessage('🧠 AI background processing engine is active...');
+        const priceInfo = getPrice(data.page_count || 1);
+        const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
+        
+        let totalCredits = 0, totalDebits = 0;
+        rows.forEach((tx: any) => {
+          const cleanedAmt = parseCurrency(tx.amount);
+          if (cleanedAmt < 0) totalDebits += Math.abs(cleanedAmt);
+          else totalCredits += cleanedAmt;
+        });
 
-      // Polling function to query processing status every 1.5 seconds
-      const pollStatus = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`/api/v1/parse?token=${token}`);
-          if (!statusRes.ok) {
-            clearInterval(pollStatus);
-            clearInterval(timer);
-            setLoading(false);
-            return;
-          }
+        setStats({
+          fileName: file.name,
+          pageCount: data.page_count || 1,
+          transactionCount: data.total_transactions || rows.length,
+          price: priceInfo.price,
+          priceLabel: priceInfo.label,
+          tier: priceInfo.tier,
+          badge: priceInfo.badge,
+          totalCredits,
+          totalDebits,
+          netBalance: parseCurrency(lastRow?.balance || '0'),
+          firstDate: rows[0]?.date || '—',
+          lastDate: lastRow?.date || '—',
+          processing_time_ms: data.processing_time_ms || 0,
+        });
 
-          const session = await statusRes.json();
-
-          if (session.status === 'completed') {
-            clearInterval(pollStatus);
-            clearInterval(timer);
-            
-            const results = session.data;
-            setParsedData(results.rows);
-            setCurrentPageCount(results.page_count);
-
-            const priceInfo = getPrice(results.page_count);
-            const lastRow = results.rows.length > 0 ? results.rows[results.rows.length - 1] : null;
-            
-            let totalCredits = 0, totalDebits = 0;
-            results.rows.forEach((tx: any) => {
-              const cleanedAmt = parseFloat(tx.amount.replace(/[^0-9.-]/g, '')) || 0;
-              if (cleanedAmt < 0) totalDebits += Math.abs(cleanedAmt);
-              else totalCredits += cleanedAmt;
-            });
-
-            setStats({
-              fileName: results.filename,
-              pageCount: results.page_count,
-              transactionCount: results.total_transactions,
-              price: priceInfo.price,
-              priceLabel: priceInfo.label,
-              tier: priceInfo.tier,
-              badge: priceInfo.badge,
-              totalCredits,
-              totalDebits,
-              netBalance: parseFloat(lastRow?.balance.replace(/[^0-9.-]/g, '')) || 0,
-              firstDate: results.rows[0]?.date || '—',
-              lastDate: lastRow?.date || '—',
-            });
-
-            setShowStats(true);
-            setLoading(false);
-          } else if (session.status === 'failed') {
-            clearInterval(pollStatus);
-            clearInterval(timer);
-            setLoading(false);
-            alert(session.error || 'Background extraction failed.');
-          }
-        } catch {
-          clearInterval(pollStatus);
-          clearInterval(timer);
-          setLoading(false);
+        setShowStats(true);
+        setLoading(false);
+        if (loadingIntervalRef.current) {
+          clearInterval(loadingIntervalRef.current);
+          loadingIntervalRef.current = null;
         }
-      }, 1500);
-
+      } else {
+        throw new Error(data.error || 'Parsing failed');
+      }
     } catch (error: any) {
-      clearInterval(timer);
+      console.error('❌ Upload error:', error);
+      alert(error?.message || 'Something went wrong. Please try again.');
       setLoading(false);
-      alert(error?.message || 'Something went wrong.');
+      if (loadingIntervalRef.current) {
+        clearInterval(loadingIntervalRef.current);
+        loadingIntervalRef.current = null;
+      }
     }
   };
-
 
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -390,11 +336,8 @@ export default function Home() {
     let totalCredits = 0, totalDebits = 0;
     SAMPLE_DEMO_DATA.forEach((tx) => {
       const amt = parseCurrency(tx.amount);
-      if (amt < 0) {
-        totalDebits += Math.abs(amt);
-      } else {
-        totalCredits += amt;
-      }
+      if (amt < 0) totalDebits += Math.abs(amt);
+      else totalCredits += amt;
     });
     const lastRow = SAMPLE_DEMO_DATA[SAMPLE_DEMO_DATA.length - 1];
     setStats({
@@ -414,6 +357,7 @@ export default function Home() {
     setShowStats(true);
   };
 
+  // ============ WHOP PAYMENT URLS ============
   const whopUrls: Record<string, string> = {
     '5': 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',
     '25': 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',
@@ -469,13 +413,14 @@ export default function Home() {
     return Object.values(selectedFormats).filter(Boolean).length;
   };
 
+  // ============ RENDER ============
   return (
     <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-start p-6 relative font-sans overflow-x-hidden">
       
-      <div className="orb orb-1" />
-      <div className="orb orb-2" />
+      {/* Ambient glow */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-emerald-500/5 rounded-full blur-[140px] pointer-events-none" />
 
-      <div className="text-center max-w-4xl mx-auto z-10 mt-10 animate-fade-up">
+      <div className="text-center max-w-4xl mx-auto z-10 mt-10">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium uppercase tracking-wider mb-4">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
           99% Accuracy • Bank Statement Parser
@@ -495,7 +440,8 @@ export default function Home() {
         </p>
       </div>
 
-      <div className="w-full max-w-2xl mx-auto z-10 mt-6 animate-fade-up-delay-1">
+      {/* Competitor Comparison */}
+      <div className="w-full max-w-2xl mx-auto z-10 mt-6">
         <div className="bg-slate-900/60 border border-slate-800/50 rounded-2xl p-3.5 flex flex-wrap items-center justify-center gap-3 md:gap-5">
           {[
             { name: 'Adobe', price: '$25/mo' },
@@ -511,7 +457,8 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="w-full max-w-4xl mx-auto z-10 mt-8 animate-fade-up-delay-2">
+      {/* Trust Section */}
+      <div className="w-full max-w-4xl mx-auto z-10 mt-8">
         <p className="text-center text-[9px] text-slate-500 uppercase tracking-[0.2em] mb-4">Trusted by finance teams at</p>
         <div className="flex flex-wrap items-center justify-center gap-8 md:gap-10">
           {['QuickBooks', 'Xero', 'Sage', 'Wave', 'FreshBooks'].map((name) => (
@@ -520,7 +467,8 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="w-full max-w-xl mx-auto z-10 mt-8 animate-fade-up-delay-3">
+      {/* Upload Zone */}
+      <div className="w-full max-w-xl mx-auto z-10 mt-8">
         <div
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -563,8 +511,9 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Loading Indicator */}
       {loading && (
-        <div className="w-full max-w-2xl mx-auto z-10 mt-6 animate-fade-up">
+        <div className="w-full max-w-2xl mx-auto z-10 mt-6">
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
             <div className="flex flex-col items-center gap-4">
               <div className="flex items-center gap-4">
@@ -589,8 +538,9 @@ export default function Home() {
         </div>
       )}
 
+      {/* Pending Download Notification */}
       {pendingDownload && (
-        <div className="w-full max-w-4xl mx-auto z-10 mt-4 animate-fade-up">
+        <div className="w-full max-w-4xl mx-auto z-10 mt-4">
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-emerald-400 font-medium">✅ Payment detected!</p>
@@ -606,8 +556,9 @@ export default function Home() {
         </div>
       )}
 
+      {/* Stats Card */}
       {showStats && stats && parsedData.length > 0 && !loading && (
-        <div className="w-full max-w-4xl mx-auto z-10 mt-6 animate-fade-up-delay-1">
+        <div className="w-full max-w-4xl mx-auto z-10 mt-6">
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -616,6 +567,11 @@ export default function Home() {
                   <span className="text-emerald-400 font-semibold text-[10px] uppercase tracking-wider">99% Accuracy</span>
                 </div>
                 <span className="text-sm text-slate-400">{stats.fileName}</span>
+                {stats.processing_time_ms && (
+                  <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">
+                    {stats.processing_time_ms}ms
+                  </span>
+                )}
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
                 <span className="bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700 text-slate-400">Pages <span className="font-bold text-white ml-1">{stats.pageCount}</span></span>
@@ -624,6 +580,7 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Format Selection */}
             <div className="mt-4">
               <label className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block mb-2">
                 Select Export Formats ({getSelectedCount()} selected)
@@ -651,6 +608,7 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Bank Selection */}
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <div className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center gap-2">
                 <label className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Bank:</label>
@@ -671,6 +629,7 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Pay & Download */}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
               <div>
                 <span className="text-xs text-slate-400">{stats.tier}</span>
@@ -693,8 +652,9 @@ export default function Home() {
         </div>
       )}
 
+      {/* Preview Table */}
       {parsedData.length > 0 && !loading && (
-        <div className="w-full max-w-4xl mx-auto z-10 mt-4 animate-fade-up-delay-2">
+        <div className="w-full max-w-4xl mx-auto z-10 mt-4">
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-3 px-1">
               <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
