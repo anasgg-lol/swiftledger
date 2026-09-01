@@ -4,7 +4,9 @@ import { PDFDocument } from 'pdf-lib';
 export const maxDuration = 60; // Next.js official Route segment configuration config object replacement
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-2.5-flash'; // Updated to valid active direct endpoint asset
+// ✅ To this active, functional endpoint model string:
+const WORKING_MODEL = 'gemini-flash-lite-latest';
+ // Updated to valid active direct endpoint asset
 
 // ============ PARSE GEMINI RESPONSE ============
 function parseGeminiResponse(text: string): any[] {
@@ -120,7 +122,11 @@ export async function POST(req: Request) {
       // ✅ FIXED: Template literal correctly interpolates variables dynamically now
       // ✅ PASTE THIS EXACT CORRECT TEMPLATE LITERAL IN BOTH PLACES INSTEAD:
       // ✅ PASTE THIS EXACT CONCATENATED RAW ENDPOINT STRUCTURE IN BOTH PLACES INSTEAD:
-      const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey; // 💡 Hardcoding the raw string concatenation guarantees compile accuracy!
+      // ✅ And replace them with this version in BOTH places:
+      // ✅ And replace them with this version in BOTH places:
+      const url = "https://googleapis.com" + WORKING_MODEL + ":generateContent?key=" + apiKey;
+
+
 
 
       
