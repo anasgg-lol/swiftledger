@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent';
+
+// List of models to try (in order of preference)
+const MODELS = [
+  'gemini-pro',           // ✅ Most widely available
+  'gemini-1.0-pro',       // ✅ Fallback
+  'gemini-1.5-pro',       // ⚠️ May require billing
+];
 
 export async function POST(req: Request) {
   try {
@@ -40,53 +46,72 @@ export async function POST(req: Request) {
 
     const prompt = `Extract ALL financial transactions into JSON array. Each object: {"id":1,"date":"date","type":"Card Payment|Direct Debit|Bank Credit|Cashpoint|Standing Order","description":"desc","amount":"$10.00","balance":"$500.00"}`;
 
-    // 🔥 DIRECT FETCH TO GEMINI API
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: prompt },
+    let result = null;
+    let modelUsed = '';
+    let lastError = '';
+
+    for (const modelName of MODELS) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+        console.log(`🔄 Trying ${modelName}...`);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
               {
-                inlineData: {
-                  mimeType: 'application/pdf',
-                  data: base64Data,
-                },
+                role: 'user',
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: 'application/pdf',
+                      data: base64Data,
+                    },
+                  },
+                ],
               },
             ],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          maxOutputTokens: 4096,
-          temperature: 0.1,
-        },
-      }),
-    });
+            generationConfig: {
+              responseMimeType: 'application/json',
+              maxOutputTokens: 4096,
+              temperature: 0.1,
+            },
+          }),
+        });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Gemini API error:', errorText);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.warn(`⚠️ ${modelName} failed:`, response.status, errorText);
+          lastError = errorText;
+          continue;
+        }
+
+        const data = await response.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+        console.log(`✅ ${modelName} succeeded, response length: ${text.length}`);
+        result = text;
+        modelUsed = modelName;
+        break;
+      } catch (error: any) {
+        console.warn(`⚠️ ${modelName} error:`, error.message);
+        lastError = error.message;
+      }
+    }
+
+    if (!result) {
       return NextResponse.json(
-        { success: false, error: `Gemini API: ${response.status} ${errorText}` },
-        { status: response.status }
+        { success: false, error: `All models failed. Last error: ${lastError}` },
+        { status: 500 }
       );
     }
 
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-    console.log('📥 Response length:', text.length);
-
     let parsedData;
     try {
-      parsedData = JSON.parse(text);
+      parsedData = JSON.parse(result);
     } catch {
-      let clean = text.trim();
+      let clean = result.trim();
       if (clean.startsWith('[') && !clean.endsWith(']')) {
         try { parsedData = JSON.parse(clean + ']'); } catch { parsedData = []; }
       } else if (clean.startsWith('{') && !clean.endsWith('}')) {
@@ -98,13 +123,14 @@ export async function POST(req: Request) {
 
     const transactions = Array.isArray(parsedData) ? parsedData : parsedData.transactions || parsedData.rows || [];
 
-    console.log(`✅ Extracted ${transactions.length} transactions`);
+    console.log(`✅ Extracted ${transactions.length} transactions using ${modelUsed}`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
       total_transactions: transactions.length,
       page_count: 1,
+      engine_used: modelUsed,
       rows: transactions,
     });
   } catch (error: any) {
