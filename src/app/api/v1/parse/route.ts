@@ -6,6 +6,10 @@ import { PDFDocument } from 'pdf-lib';
 export const maxDuration = 60; // Next.js official Route segment configuration
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15MB safe threshold upload window limit
 const CONCURRENCY = 8;
+if (typeof global.DOMMatrix === 'undefined') {
+  (global as any).DOMMatrix = class {};
+}
+
 interface LocalRow {
   date: string;
   description: string;
