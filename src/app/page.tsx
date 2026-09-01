@@ -280,104 +280,99 @@ export default function Home() {
     }
   }, []);
 
-  const handleFileUpload = async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
+    const handleFileUpload = async (file: File) => {
     setLoading(true);
     setFileName(file.name);
     setParsedData([]);
     setShowStats(false);
     setLoadingTime(0);
-    setProgressMessage('🔍 Scanning your statement...');
+    setProgressMessage('🔍 Initializing high-speed secure channel...');
 
-    if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
-    loadingIntervalRef.current = setInterval(() => {
-      setLoadingTime(prev => {
-        const currentTime = prev + 1;
-        let msg = progressMessages[0].msg;
-        for (let i = progressMessages.length - 1; i >= 0; i--) {
-          if (currentTime >= progressMessages[i].time) {
-            msg = progressMessages[i].msg;
-            break;
-          }
-        }
-        setProgressMessage(msg);
-        return currentTime;
-      });
+    const timer = setInterval(() => {
+      setLoadingTime(prev => prev + 1);
     }, 1000);
 
     try {
-      const res = await fetch('/api/v1/parse', { method: 'POST', body: formData });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || `Server error: ${res.status}`);
-      }
-      const data = await res.json();
-      if (data.success) {
-        const rows = data.rows;
-        setParsedData(rows);
-        const pageCount = data.page_count || 1;
-        setCurrentPageCount(pageCount);
-        const priceInfo = getPrice(pageCount);
+      const formData = new FormData();
+      formData.append('file', file);
 
-        // 🔥 DEBUG: Log the last 5 transactions
-        if (rows.length > 0) {
-          console.log('📊 Last 5 transactions:');
-          rows.slice(-5).forEach((tx: Transaction, i: number) => {
-            console.log(`  ${i+1}. ${tx.date} | ${tx.amount} | ${tx.balance}`);
-          });
-        }
+      // Hit the async backend route to instantly capture the tracking token
+      const initialRes = await fetch('/api/v1/parse', { method: 'POST', body: formData });
+      if (!initialRes.ok) throw new Error('Initial hand-shake transmission failed.');
+      
+      const initialData = await initialRes.json();
+      const token = initialData.token;
 
-        // 🔥 CRITICAL: Use the balance FROM THE PDF
-        const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
-        const closingBalance = lastRow ? parseCurrency(lastRow.balance) : 0;
+      setProgressMessage('🧠 AI background processing engine is active...');
 
-        let totalCredits = 0, totalDebits = 0;
-        rows.forEach((tx: Transaction) => {
-          const amt = parseCurrency(tx.amount);
-          if (amt < 0) {
-            totalDebits += Math.abs(amt);
-          } else {
-            totalCredits += amt;
+      // Polling function to query processing status every 1.5 seconds
+      const pollStatus = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/v1/parse?token=${token}`);
+          if (!statusRes.ok) {
+            clearInterval(pollStatus);
+            clearInterval(timer);
+            setLoading(false);
+            return;
           }
-        });
 
-        const dates = rows.map((tx: Transaction) => new Date(tx.date));
-        const firstDate = dates.length ? dates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-        const lastDate = dates.length ? dates[dates.length - 1].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+          const session = await statusRes.json();
 
-        console.log('📊 Closing balance from PDF:', closingBalance);
+          if (session.status === 'completed') {
+            clearInterval(pollStatus);
+            clearInterval(timer);
+            
+            const results = session.data;
+            setParsedData(results.rows);
+            setCurrentPageCount(results.page_count);
 
-        setStats({
-          fileName: file.name,
-          pageCount,
-          transactionCount: rows.length,
-          price: priceInfo.price,
-          priceLabel: priceInfo.label,
-          tier: priceInfo.tier,
-          badge: priceInfo.badge,
-          totalCredits,
-          totalDebits,
-          netBalance: closingBalance,
-          firstDate,
-          lastDate,
-        });
-        setShowStats(true);
-        setProgressMessage('✅ Done! Your files are ready.');
-      } else {
-        alert(data.error || 'Parsing failed. Please try again.');
-      }
-    } catch (error) {
-      console.error('Upload error:', error);
-      alert(error instanceof Error ? error.message : 'Something went wrong.');
-    } finally {
+            const priceInfo = getPrice(results.page_count);
+            const lastRow = results.rows.length > 0 ? results.rows[results.rows.length - 1] : null;
+            
+            let totalCredits = 0, totalDebits = 0;
+            results.rows.forEach((tx: any) => {
+              const cleanedAmt = parseFloat(tx.amount.replace(/[^0-9.-]/g, '')) || 0;
+              if (cleanedAmt < 0) totalDebits += Math.abs(cleanedAmt);
+              else totalCredits += cleanedAmt;
+            });
+
+            setStats({
+              fileName: results.filename,
+              pageCount: results.page_count,
+              transactionCount: results.total_transactions,
+              price: priceInfo.price,
+              priceLabel: priceInfo.label,
+              tier: priceInfo.tier,
+              badge: priceInfo.badge,
+              totalCredits,
+              totalDebits,
+              netBalance: parseFloat(lastRow?.balance.replace(/[^0-9.-]/g, '')) || 0,
+              firstDate: results.rows[0]?.date || '—',
+              lastDate: lastRow?.date || '—',
+            });
+
+            setShowStats(true);
+            setLoading(false);
+          } else if (session.status === 'failed') {
+            clearInterval(pollStatus);
+            clearInterval(timer);
+            setLoading(false);
+            alert(session.error || 'Background extraction failed.');
+          }
+        } catch {
+          clearInterval(pollStatus);
+          clearInterval(timer);
+          setLoading(false);
+        }
+      }, 1500);
+
+    } catch (error: any) {
+      clearInterval(timer);
       setLoading(false);
-      if (loadingIntervalRef.current) {
-        clearInterval(loadingIntervalRef.current);
-        loadingIntervalRef.current = null;
-      }
+      alert(error?.message || 'Something went wrong.');
     }
   };
+
 
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
