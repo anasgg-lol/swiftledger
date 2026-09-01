@@ -3,11 +3,6 @@ import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { PDFDocument } from 'pdf-lib';
 
 const pdfParse = require('pdf-parse');
-export const config = {
-  api: {
-    bodyParser: true,
-  },
-};
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 const CONCURRENCY = 8; // parallel Gemini fallback calls in-flight at once
