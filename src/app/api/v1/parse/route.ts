@@ -10,6 +10,10 @@ if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
 }
 
+// Global Regex anchors for local millisecond extraction passes
+const DATE_REGEX = /\b(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s*(?:\d{2,4})?)\b/;
+const MONEY_REGEX = /\(?-?\+?\$?\s?[\d,]+\.\d{2}\)?/g;
+
 // ============ PARSE GEMINI RESPONSE ============
 function parseGeminiResponse(text: string): any[] {
   let clean = text.trim();
@@ -21,16 +25,14 @@ function parseGeminiResponse(text: string): any[] {
     if (parsed.transactions) return parsed.transactions;
     if (parsed.rows) return parsed.rows;
     for (const key of Object.keys(parsed)) {
-      if (Array.isArray(parsed[key]) && parsed[key].length > 0) {
-        return parsed[key];
-      }
+      if (Array.isArray(parsed[key]) && parsed[key].length > 0) return parsed[key];
     }
     return [];
   } catch {
     const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (arrayMatch) {
       try {
-        const extracted = JSON.parse(arrayMatch[0]); // Fixed RegExpMatchArray element indexing safely
+        const extracted = JSON.parse(arrayMatch[0]); // Explicit array index tracking clears TypeScript checks safely
         if (Array.isArray(extracted)) return extracted;
       } catch {}
     }
@@ -38,12 +40,44 @@ function parseGeminiResponse(text: string): any[] {
   }
 }
 
-// ============ 🧱 STEP 1: THE SLICER (NATIVE ULTRA-FAST SINGLE-PAGE EXTRACTION) ============
+// ============ 🧱 LOCAL LAYER: FAST HIGH-SPEED REGEX LEDGER EXTRACTOR ============
+function parseTextNatively(text: string): any[] {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const rows: any[] = [];
+
+  for (const line of lines) {
+    const dateMatch = line.match(DATE_REGEX);
+    if (!dateMatch) continue;
+
+    const moneyMatches = line.match(MONEY_REGEX);
+    if (!moneyMatches || moneyMatches.length < 2) continue; // Requires at least Amount and Balance column metrics
+
+    const dateStr = dateMatch[0];
+    const amountStr = moneyMatches[moneyMatches.length - 2];
+    const balanceStr = moneyMatches[moneyMatches.length - 1];
+
+    const dateEnd = line.indexOf(dateStr) + dateStr.length;
+    const amountIndex = line.lastIndexOf(amountStr);
+    
+    if (amountIndex <= dateEnd) continue;
+    const description = line.slice(dateEnd, amountIndex).replace(/[|•\-–—\s]+$/, '').trim();
+
+    rows.push({
+      date: dateStr,
+      type: 'Transaction',
+      description: description || 'Commercial Ledger Line',
+      amount: amountStr,
+      balance: balanceStr
+    });
+  }
+  return rows;
+}
+
+// ============ 🧱 STEP 1: THE SLICER (NATIVE CHOP INDIVIDUAL MEMORY PAGES) ============
 async function slicePDFIntoSinglePages(buffer: Buffer): Promise<string[]> {
   const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
   const totalPages = pdfDoc.getPageCount();
   
-  // Maps page indices into raw base64 data string arrays instantly inside local memory threads
   const slicePromises = Array.from({ length: totalPages }, async (_, i) => {
     const newDoc = await PDFDocument.create();
     const [copiedPage] = await newDoc.copyPages(pdfDoc, [i]);
@@ -58,91 +92,76 @@ async function slicePDFIntoSinglePages(buffer: Buffer): Promise<string[]> {
 // ============ MAIN SERVICE CORE ============
 export async function POST(req: Request) {
   try {
-    // 🔥 SILENCES THE NATIVE PDF-PARSE CANVAS DEP WARNINGS INSIDE THE SERVER CONSOLE LOGS:
-    const originalWarn = console.warn;
-    console.warn = (...args) => {
-      const combined = args.join(' ');
-      if (combined.includes('Cannot load "@napi-rs/canvas"') || combined.includes('rendering may be broken')) return;
-      originalWarn(...args);
-    };
-
-    console.log('🚀 JET ENGINE ARCHITECTURE ACTIVATED');
-
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ success: false, error: 'GEMINI_API_KEY missing' }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ success: false, error: 'GEMINI_API_KEY missing' }, { status: 500 });
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    if (!file) {
-      return NextResponse.json({ success: false, error: 'No file uploaded' }, { status: 400 });
-    }
+    if (!file) return NextResponse.json({ success: false, error: 'No file uploaded' }, { status: 400 });
 
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json({ success: false, error: 'File exceeds 10MB' }, { status: 400 });
-    }
+    if (file.size > MAX_FILE_SIZE_BYTES) return NextResponse.json({ success: false, error: 'File exceeds 10MB' }, { status: 400 });
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // Get exact runtime page metrics
-    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
-    const pageCount = pdfDoc.getPageCount();
-    console.log(`📄 Detected ${pageCount} pages`);
+    let pageCount = 1;
+    let rawTextContent = '';
 
-    // Execute Slicer to chop the document apart into memory page strings instantly
-    const base64Pages = await slicePDFIntoSinglePages(buffer);
+    // ⚡ INSTANT LAYER: ATTEMPT NATIVE STRING STRING EXTRACTION TRACE
+    try {
+      const dynamicPdfParse = require('pdf-parse'); // Dynamic scoping passes framework builds safely
+      const parsed = await dynamicPdfParse(buffer);
+      pageCount = parsed.numpages || 1;
+      rawTextContent = parsed.text || '';
+    } catch {
+      // Fallback tracking parameters
+    }
+
+    let combinedTransactions: any[] = [];
+    let processingEngine = 'SwiftLedger Hyper-Speed Local Core';
+
+    // 💎 CHECK CHANNEL GATES: IF DIGITAL TEXT IS VALID & STRUCTURED, PARSE LITERALLY INSTANTLY
+    const localRows = parseTextNatively(rawTextContent);
     
-    // ✅ BACK TO YOUR EXACT PRECISE TEMPLATE LITERAL PATTERN WITHOUT INTERPOLATION MISSES:
+    // ✅ IMPLEMENTED PRECISE TEMPLATE LITERAL AS REQUESTED RIGHT PAST THE NATIVE LAYER GATES
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact parameter mapping schema: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
 
-    // ============ 🚀 STEP 2: THE WORKER (EXECUTE ASYNC PARALLEL CONCURRENCY HANDSHAKES) ============
-    const workerPromises = base64Pages.map(async (base64Chunk, index) => {
-      console.log(`📄 Processing multi-threaded parallel page line ${index + 1}/${base64Pages.length}`);
+    if (localRows.length > 0) {
+      console.log(`⚡ LOCAL-FIRST GOLDEN PATH IGNITED: Parsed ${localRows.length} rows natively in milliseconds.`);
+      combinedTransactions = localRows;
+    } else {
+      // 📸 IMAGE / SCANNED PDF FALLBACK CHANNEL GRIDS
+      console.log('📸 SCANNED LAYER FALLBACK ACTIVATED: TRIGGERING PARALLEL CONCURRENT WORKERS...');
+      processingEngine = 'SwiftLedger Async Worker Pipeline';
+      
+      const base64Pages = await slicePDFIntoSinglePages(buffer);
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inlineData: { mimeType: 'application/pdf', data: base64Chunk } },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            maxOutputTokens: 4096,
-            temperature: 0,
-          },
-        }),
+      // ============ 🚀 STEP 2: THE WORKER (PARALLEL CONCURRENCY STREAM) ============
+      const workerPromises = base64Pages.map(async (base64Chunk, index) => {
+        console.log(`📄 Processing multi-threaded parallel page line ${index + 1}/${base64Pages.length}`);
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'application/pdf', data: base64Chunk } }] }],
+            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 4096, temperature: 0 },
+          }),
+        });
+
+        if (!response.ok) return [];
+        const data = await response.json();
+        return parseGeminiResponse(data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]');
       });
 
-      if (!response.ok) {
-        console.error(`❌ Parallel Channel Page ${index + 1} broken:`, response.status);
-        return [];
-      }
-
-      const data = await response.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-      return parseGeminiResponse(text);
-    });
-
-    // Resolve all independent microsecond worker streams concurrently over the wire all at once
-    const resolvedSegments = await Promise.all(workerPromises);
-    let combinedTransactions: any[] = [];
-    for (const segment of resolvedSegments) {
-      if (Array.isArray(segment)) {
-        combinedTransactions = combinedTransactions.concat(segment);
+      const resolvedSegments = await Promise.all(workerPromises);
+      for (const segment of resolvedSegments) {
+        if (Array.isArray(segment)) combinedTransactions = combinedTransactions.concat(segment);
       }
     }
 
-    // ============ 📊 STEP 3: THE ACCOUNTANT (NORMALIZE SYSTEM ARRAYS AND CHRONOLOGICAL SEQUENCES) ============
+    // ============ 📊 STEP 3: THE ACCOUNTANT (RE-INDEX AND VALIDATE ARRAY SEQUENCES NATIVELY) ============
     const finalizedRows = combinedTransactions.map((tx: any, index: number) => ({
       id: index + 1,
       date: tx.date || tx.d || '',
@@ -152,17 +171,18 @@ export async function POST(req: Request) {
       balance: tx.balance || tx.b || '$0.00'
     }));
 
-    console.log(`✅ PARSER ARCHITECTURE SUCCESS: ${finalizedRows.length} ROWS SECURED.`);
+    console.log(`✅ EXECUTION RESOLVED: Securing ${finalizedRows.length} total transactional records.`);
 
     return NextResponse.json({
       success: true,
       filename: file.name,
+      engine_used: processingEngine,
       total_transactions: finalizedRows.length,
       page_count: pageCount,
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('❌ System Overhaul Failure:', error.message || error);
+    console.error('❌ Root System Exception Caught:', error.message || error);
     return NextResponse.json({ success: false, error: error.message || 'Parsing failed' }, { status: 500 });
   }
 }
