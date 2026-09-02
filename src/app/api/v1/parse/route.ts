@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; // Next.js official Route segment configuration config object
+export const maxDuration = 60; // Next.js official Route segment configuration config object [pdf_mwBjbr.pdf]
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset
+const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset [pdf_mwBjbr.pdf]
 
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
 }
 
-// ============ BULLETPROOF JSON PARSE RECOVERY ============
+// ============ BULLETPROOF CASE-INSENSITIVE JSON PARSE RECOVERY ============
 function parseGeminiResponse(text: string): any[] {
   let clean = text.trim();
   
@@ -19,23 +19,46 @@ function parseGeminiResponse(text: string): any[] {
   
   try {
     const parsed = JSON.parse(clean);
-    if (Array.isArray(parsed)) return parsed;
-    if (parsed.transactions && Array.isArray(parsed.transactions)) return parsed.transactions;
-    if (parsed.rows && Array.isArray(parsed.rows)) return parsed.rows;
-    
-    for (const key of Object.keys(parsed)) {
-      if (Array.isArray(parsed[key])) {
-        return parsed[key];
+    let rawRows: any[] = [];
+
+    if (Array.isArray(parsed)) {
+      rawRows = parsed;
+    } else if (parsed.transactions && Array.isArray(parsed.transactions)) {
+      rawRows = parsed.transactions;
+    } else if (parsed.rows && Array.isArray(parsed.rows)) {
+      rawRows = parsed.rows;
+    } else {
+      for (const key of Object.keys(parsed)) {
+        if (Array.isArray(parsed[key])) {
+          rawRows = parsed[key];
+          break;
+        }
       }
     }
-    return [];
+
+    // 🔥 THE FIX: Normalize every single key token to lowercase to prevent mapping skips
+    return rawRows.map(row => {
+      const normalized: Record<string, any> = {};
+      Object.keys(row).forEach(key => {
+        normalized[key.toLowerCase()] = row[key];
+      });
+      return normalized;
+    });
+
   } catch {
-    // Advanced Regex fallback to extract structural arrays directly without corruption
     try {
       const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      if (arrayMatch && arrayMatch[0]) {
+      if (arrayMatch) {
         const extracted = JSON.parse(arrayMatch[0]);
-        if (Array.isArray(extracted)) return extracted;
+        if (Array.isArray(extracted)) {
+          return extracted.map(row => {
+            const normalized: Record<string, any> = {};
+            Object.keys(row).forEach(key => {
+              normalized[key.toLowerCase()] = row[key];
+            });
+            return normalized;
+          });
+        }
       }
     } catch {}
     return [];
@@ -121,7 +144,6 @@ export async function POST(req: Request) {
     let processingEngine = 'SwiftLedger Hyper-Speed Digital Text Channel';
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
-
     if (hasReadableText) {
       console.log(`⚡ DIGITAL CORE CHANNEL: TEXT LAYER FOUND (${rawTextContent.length} chars). BYPASSING OCR CHUNKING...`);
       
@@ -179,21 +201,22 @@ export async function POST(req: Request) {
       }
     }
 
-    // ============ 📊 STEP 3: THE ACCOUNTANT (NORMALIZE ALL FIELDS NATIVELY) ============
-    const finalizedRows = (Array.isArray(combinedTransactions) ? combinedTransactions : []).map((tx: any, index: number) => {
-      const rawAmount = tx.amount ?? tx.a ?? tx.Amount ?? '0.00';
-      const rawBalance = tx.balance ?? tx.b ?? tx.Balance ?? '0.00';
-      
-      const amtStr = typeof rawAmount === 'number' ? `$${rawAmount.toFixed(2)}` : String(rawAmount);
-      const balStr = typeof rawBalance === 'number' ? `$${rawBalance.toFixed(2)}` : String(rawBalance);
+    // ============ 📊 STEP 3: THE ACCOUNTANT (NORMALIZE ALL FIELDS EXFORCED BY TIERS NATIVELY) ============
+    const finalizedRows = combinedTransactions.map((tx: any, index: number) => {
+      // Safely reads lowercased normalized keys regardless of model variations
+      const dateVal = tx.date || tx.d || '';
+      const typeVal = tx.type || tx.t || 'Transaction';
+      const descVal = tx.description || tx.desc || tx.particulars || '';
+      const amountVal = tx.amount || tx.a || '$0.00';
+      const balanceVal = tx.balance || tx.b || '$0.00';
 
       return {
         id: index + 1,
-        date: tx.date || tx.d || tx.Date || '',
-        type: tx.type || tx.t || tx.Type || 'Transaction',
-        description: tx.description || tx.desc || tx.Description || tx.Particulars || '',
-        amount: amtStr,
-        balance: balStr
+        date: dateVal,
+        type: typeVal,
+        description: descVal,
+        amount: typeof amountVal === 'number' ? `$${amountVal.toFixed(2)}` : String(amountVal),
+        balance: typeof balanceVal === 'number' ? `$${balanceVal.toFixed(2)}` : String(balanceVal)
       };
     });
 
