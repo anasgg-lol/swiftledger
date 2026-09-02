@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
+import PDFParser from 'pdf2json';
 
-export const maxDuration = 60; // Next.js official Route segment configuration config object [A]
+export const maxDuration = 60; // Next.js official Route segment configuration config object
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset [A]
+const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset
 
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
@@ -51,7 +52,7 @@ function parseGeminiResponse(text: string): any[] {
     try {
       const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
       if (arrayMatch) {
-        const extracted = JSON.parse(arrayMatch[0]); // Explicit array index selection to clear strict TS compile checks safely
+        const extracted = JSON.parse(arrayMatch[0]); // Explicit element lookup clears typing errors
         if (Array.isArray(extracted)) {
           return extracted.map(row => {
             const normalized: Record<string, any> = {};
@@ -67,27 +68,33 @@ function parseGeminiResponse(text: string): any[] {
   }
 }
 
-// ============ 🧱 NATIVE EXTRACTOR: SAFE PURE STRING LAYER READER ============
+// ============ 🧱 HIGH-SPEED STRUCTURAL TEXT GRID LAYOUT EXTRACTOR ============
 async function extractTextNatively(buffer: Buffer): Promise<string> {
-  try {
-    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
-    const pages = pdfDoc.getPages();
-    let textDump = '';
+  return new Promise((resolve) => {
+    const pdfParser = new PDFParser();
     
-    // Safely reads lowercased typography lines straight out of file content buffers natively
-    textDump = buffer.toString('utf8').replace(/[^\x20-\x7E\n\t]/g, '');
-    
-    // Fallback directly to text layer bytes decoding if initial character maps are too short
-    if (textDump.trim().length < 100) {
-      for (const page of pages) {
-        const { text } = page as any;
-        if (text) textDump += text + '\n';
-      }
-    }
-    return textDump;
-  } catch {
-    return buffer.toString('utf8').replace(/[^\x20-\x7E\n\t]/g, '');
-  }
+    pdfParser.on('pdfParser_dataError', () => resolve(''));
+    pdfParser.on('pdfParser_dataReady', (pdfData) => {
+      let extractedText = '';
+      
+      pdfData.Pages.forEach((page) => {
+        let lastY = -1;
+        page.Texts.forEach((textObj) => {
+          const textStr = decodeURIComponent(textObj.R[0].T);
+          if (lastY !== textObj.y && lastY !== -1) {
+            extractedText += '\n';
+          }
+          extractedText += textStr + ' ';
+          lastY = textObj.y;
+        });
+        extractedText += '\n--- PAGE BREAK ---\n';
+      });
+      
+      resolve(extractedText);
+    });
+
+    pdfParser.parseBuffer(buffer);
+  });
 }
 
 // ============ 🧱 STEP 1: THE SLICER (NATIVE ULTRA-FAST SINGLE-PAGE EXTRACTION) ============
@@ -140,9 +147,9 @@ export async function POST(req: Request) {
     const pageCount = pdfDoc.getPageCount();
     console.log(`📄 Detected ${pageCount} pages`);
 
-    // ⚡ INSTANT LOCAL DECODING CHECK
+    // ⚡ INSTANT LOCAL DECODING CHECK WITH STRUCTURAL TEXT POSITIONING MAPS
     const rawTextContent = await extractTextNatively(buffer);
-    const hasReadableText = rawTextContent.trim().length > 200;
+    const hasReadableText = rawTextContent.trim().length > 100;
 
     let combinedTransactions: any[] = [];
     let processingEngine = 'SwiftLedger Hyper-Speed Digital Text Channel';
@@ -154,8 +161,7 @@ export async function POST(req: Request) {
     CRITICAL: Extract EVERY single printed transaction row. Do not truncate, skip, or summarize anything.`;
 
     if (hasReadableText) {
-      // 🚀 HYPER-SPEED TEXT CHANNEL: Sends lightweight text payload directly. Drops latency down to ~1s! [A]
-      console.log(`⚡ HYPER-SPEED TEXT CHANNEL ACTIVATED: TEXT LAYER FOUND (${rawTextContent.length} chars). BYPASSING BINARY LATENCY...`);
+      console.log(`⚡ DIGITAL CORE CHANNEL: TEXT LAYER FOUND (${rawTextContent.length} chars). BYPASSING OCR CHUNKING...`);
       
       const textPrompt = `${basePrompt}
       
@@ -173,18 +179,18 @@ export async function POST(req: Request) {
 
       if (response.ok) {
         const data = await response.json();
+        // ✅ FIXED: Repaired array selection layout syntax constraints
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
         console.log('📡 Gemini Raw Output:\n', text);
         combinedTransactions = parseGeminiResponse(text);
       }
     } else {
-      // 📸 SCANNED LAYER OR HEAVY MULTI-PAGE BATCH CHUNKING CONCURRENCY PIPELINE [A]
-      console.log('🚀 CONCURRENCY MULTI-THREADED PIPELINE ACTIVATED: LAUNCHING PARALLEL WORKERS...');
+      console.log('📸 SCANNED LAYER FALLBACK ACTIVATED: TRIGGERING PARALLEL CONCURRENT WORKERS...');
       processingEngine = 'SwiftLedger Async Worker Pipeline';
       
       const base64Pages = await slicePDFIntoSinglePages(buffer);
 
-      const workerPromises = base64Pages.map(async (base64Chunk, index) => {
+      const workerPromises = base64Pages.map(async (base64Chunk) => {
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -196,6 +202,7 @@ export async function POST(req: Request) {
 
         if (!response.ok) return [];
         const data = await response.json();
+        // ✅ FIXED: Repaired array selection layout syntax constraints
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
         return parseGeminiResponse(text);
       });
