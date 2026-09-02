@@ -1,37 +1,43 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; // Next.js official Route segment configuration config object [pdf_mwBjbr.pdf]
+export const maxDuration = 60; // Next.js official Route segment configuration config object
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset [pdf_mwBjbr.pdf]
+const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset
 
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
 }
 
-// ============ PARSE GEMINI RESPONSE ============
+// ============ BULLETPROOF JSON PARSE RECOVERY ============
 function parseGeminiResponse(text: string): any[] {
   let clean = text.trim();
+  
+  // Clean markdown containers if present
   clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
   
   try {
     const parsed = JSON.parse(clean);
     if (Array.isArray(parsed)) return parsed;
-    if (parsed.transactions) return parsed.transactions;
-    if (parsed.rows) return parsed.rows;
+    if (parsed.transactions && Array.isArray(parsed.transactions)) return parsed.transactions;
+    if (parsed.rows && Array.isArray(parsed.rows)) return parsed.rows;
+    
     for (const key of Object.keys(parsed)) {
-      if (Array.isArray(parsed[key]) && parsed[key].length > 0) return parsed[key];
+      if (Array.isArray(parsed[key])) {
+        return parsed[key];
+      }
     }
     return [];
   } catch {
-    const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
-    if (arrayMatch) {
-      try {
+    // Advanced Regex fallback to extract structural arrays directly without corruption
+    try {
+      const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (arrayMatch && arrayMatch[0]) {
         const extracted = JSON.parse(arrayMatch[0]);
         if (Array.isArray(extracted)) return extracted;
-      } catch {}
-    }
+      }
+    } catch {}
     return [];
   }
 }
@@ -114,11 +120,9 @@ export async function POST(req: Request) {
     let combinedTransactions: any[] = [];
     let processingEngine = 'SwiftLedger Hyper-Speed Digital Text Channel';
 
-    // ✅ IMPLEMENTED PRECISE TEMPLATE LITERAL AS STRONGLY DEMANDED
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
 
     if (hasReadableText) {
-      // 🚀 DIGITAL CORE CHANNEL: SEND LIGHTWEIGHT TEXT STREAM INSTEAD OF BULKY IMAGES [pdf_mwBjbr.pdf]
       console.log(`⚡ DIGITAL CORE CHANNEL: TEXT LAYER FOUND (${rawTextContent.length} chars). BYPASSING OCR CHUNKING...`);
       
       const textPrompt = `Extract ALL financial transaction rows from this raw text bank statement dump.
@@ -145,7 +149,6 @@ export async function POST(req: Request) {
         combinedTransactions = parseGeminiResponse(text);
       }
     } else {
-      // 📸 SCANNED LAYER FALLBACK CHANNEL GRIDS (FOR TRUE SCANNED IMAGES) [pdf_mwBjbr.pdf]
       console.log('📸 SCANNED LAYER FALLBACK ACTIVATED: TRIGGERING PARALLEL CONCURRENT WORKERS...');
       processingEngine = 'SwiftLedger Async Worker Pipeline';
       
@@ -176,7 +179,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // ============ 📊 STEP 3: THE ACCOUNTANT (NORMALIZE ALL FIELDS EXFORCED BY TIERS NATIVELY) ============
+    // ============ 📊 STEP 3: THE ACCOUNTANT (NORMALIZE ALL FIELDS NATIVELY) ============
     const finalizedRows = (Array.isArray(combinedTransactions) ? combinedTransactions : []).map((tx: any, index: number) => {
       const rawAmount = tx.amount ?? tx.a ?? tx.Amount ?? '0.00';
       const rawBalance = tx.balance ?? tx.b ?? tx.Balance ?? '0.00';
