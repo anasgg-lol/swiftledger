@@ -246,7 +246,7 @@ export default function Home() {
     setParsedData([]);
     setShowStats(false);
     setLoadingTime(0);
-    setProgressMessage('🔍 Scanning your statement...');
+    setProgressMessage('⚡ Connecting to SwiftLedger high-speed processing array...');
 
     if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
     loadingIntervalRef.current = setInterval(() => {
@@ -255,7 +255,7 @@ export default function Home() {
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', file); // Streams pristine digital text layer signatures to backend safely
 
       const res = await fetch('/api/v1/parse', {
         method: 'POST',
@@ -264,7 +264,7 @@ export default function Home() {
 
       if (!res.ok) {
         const errorText = await res.text();
-        throw new Error(errorText || `Server error: ${res.status}`);
+        throw new Error(errorText || `Server processing failure status: ${res.status}`);
       }
 
       const data = await res.json();
@@ -284,6 +284,9 @@ export default function Home() {
           else totalCredits += cleanedAmt;
         });
 
+        // Inform the customer exactly which performance cluster processed their file ledger
+        const engineLabel = data.engine_used || 'SwiftLedger Hyper-Speed Core';
+
         setStats({
           fileName: file.name,
           pageCount: data.page_count || 1,
@@ -298,6 +301,7 @@ export default function Home() {
           firstDate: rows[0]?.date || '—',
           lastDate: lastRow?.date || '—',
           processing_time_ms: data.processing_time_ms || 0,
+          engineUsedLabel: engineLabel
         });
 
         setShowStats(true);
@@ -307,11 +311,11 @@ export default function Home() {
           loadingIntervalRef.current = null;
         }
       } else {
-        throw new Error(data.error || 'Parsing failed');
+        throw new Error(data.error || 'Parsing exception occurred.');
       }
     } catch (error: any) {
-      console.error('❌ Upload error:', error);
-      alert(error?.message || 'Something went wrong. Please try again.');
+      console.error('❌ Upload execution failure:', error);
+      alert(error?.message || 'Handshake failed. Restoring secure connection channel gates.');
       setLoading(false);
       if (loadingIntervalRef.current) {
         clearInterval(loadingIntervalRef.current);
