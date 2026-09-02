@@ -10,10 +10,7 @@ if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
 }
 
-// Global Regex anchors for local millisecond extraction passes
-const DATE_REGEX = /\b(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s*(?:\d{2,4})?)\b/;
-const MONEY_REGEX = /\(?-?\+?\$?\s?[\d,]+\.\d{2}\)?/g;
-
+// ============ PARSE GEMINI RESPONSE ============
 function parseGeminiResponse(text: string): any[] {
   let clean = text.trim();
   clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -60,38 +57,6 @@ async function extractTextNatively(buffer: Buffer): Promise<string> {
   }
 }
 
-function parseTextNatively(text: string): any[] {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const rows: any[] = [];
-
-  for (const line of lines) {
-    const dateMatch = line.match(DATE_REGEX);
-    if (!dateMatch) continue;
-
-    const moneyMatches = line.match(MONEY_REGEX);
-    if (!moneyMatches || moneyMatches.length < 2) continue;
-
-    const dateStr = dateMatch[0];
-    const amountStr = moneyMatches[moneyMatches.length - 2];
-    const balanceStr = moneyMatches[moneyMatches.length - 1];
-
-    const dateEnd = line.indexOf(dateStr) + dateStr.length;
-    const amountIndex = line.lastIndexOf(amountStr);
-    
-    if (amountIndex <= dateEnd) continue;
-    const description = line.slice(dateEnd, amountIndex).replace(/[|•\-–—\s]+$/, '').trim();
-
-    rows.push({
-      date: dateStr,
-      type: 'Transaction',
-      description: description || 'Commercial Ledger Line',
-      amount: amountStr,
-      balance: balanceStr
-    });
-  }
-  return rows;
-}
-
 async function slicePDFIntoSinglePages(buffer: Buffer): Promise<string[]> {
   const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
   const totalPages = pdfDoc.getPageCount();
@@ -107,6 +72,7 @@ async function slicePDFIntoSinglePages(buffer: Buffer): Promise<string[]> {
   return Promise.all(slicePromises);
 }
 
+// ============ MAIN SERVICE CORE ============
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -125,25 +91,49 @@ export async function POST(req: Request) {
     const pageCount = pdfDoc.getPageCount();
     console.log(`📄 Detected ${pageCount} pages`);
 
-    // ⚡ INSTANT LOCAL DECODING LAYER
+    // ⚡ INSTANT LAYER: READ NATIVE EMBEDDED TEXT
     const rawTextContent = await extractTextNatively(buffer);
-    const localRows = parseTextNatively(rawTextContent);
+    const hasReadableText = rawTextContent.trim().length > 100;
 
     let combinedTransactions: any[] = [];
-    let processingEngine = 'SwiftLedger Hyper-Speed Local Core';
+    let processingEngine = 'SwiftLedger Hyper-Speed Digital Text Channel';
 
-    // ✅ FIXED PERMANENTLY: ENFORCED EXACT BACKTICK TEMPLATE LITERAL FORMAT AS STRONGLY DEMANDED
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
-    const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact parameter mapping schema: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
 
-    if (localRows.length > 5) {
-      console.log(`⚡ LOCAL-FIRST GOLDEN PATH IGNITED: Parsed ${localRows.length} rows natively in milliseconds.`);
-      combinedTransactions = localRows;
+    if (hasReadableText) {
+      // 🚀 DIGITAL CORE CHANNEL: SEND LIGHTWEIGHT TEXT STREAM INSTEAD OF BULKY IMAGES
+      console.log(`⚡ DIGITAL CORE CHANNEL: TEXT LAYER FOUND (${rawTextContent.length} chars). BYPASSING OCR CHUNKING...`);
+      
+      const textPrompt = `Extract ALL financial transaction rows from this raw text bank statement dump.
+      Return ONLY a JSON array where each object strictly matches this schema mapping:
+      [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
+      
+      CRITICAL: Extract EVERY single printed transaction row. Do not truncate, skip, or summarize anything.
+      
+      RAW DATA TEXT:
+      ${rawTextContent}`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: textPrompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, temperature: 0.0 },
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+        combinedTransactions = parseGeminiResponse(text);
+      }
     } else {
+      // 📸 SCANNED LAYER FALLBACK CHANNEL GRIDS (FOR TRUE SCANNED IMAGES)
       console.log('📸 SCANNED LAYER FALLBACK ACTIVATED: TRIGGERING PARALLEL CONCURRENT WORKERS...');
       processingEngine = 'SwiftLedger Async Worker Pipeline';
       
       const base64Pages = await slicePDFIntoSinglePages(buffer);
+      const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact parameter mapping schema: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
 
       const workerPromises = base64Pages.map(async (base64Chunk, index) => {
         console.log(`📄 Processing multi-threaded parallel page line ${index + 1}/${base64Pages.length}`);
@@ -169,6 +159,7 @@ export async function POST(req: Request) {
       }
     }
 
+    // ============ 📊 STEP 3: THE ACCOUNTANT ============
     const finalizedRows = combinedTransactions.map((tx: any, index: number) => ({
       id: index + 1,
       date: tx.date || tx.d || '',
