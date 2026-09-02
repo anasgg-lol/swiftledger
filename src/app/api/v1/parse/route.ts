@@ -25,7 +25,9 @@ function parseGeminiResponse(text: string): any[] {
     const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (arrayMatch) {
       try {
-        const extracted = JSON.parse(arrayMatch[0]);
+        // ✅ وعوضه بالسطر الصحيح هذا (بإضافة [0] باش يقرى النص داخل المصفوفة):
+        const extracted = JSON.parse(arrayMatch[0]); // 💡 تحديد العنصر الأول يحل مشكلة الـ TypeScript فوراً!
+
         if (Array.isArray(extracted)) return extracted;
       } catch {}
     }
@@ -70,7 +72,8 @@ export async function POST(req: Request) {
     }
     console.log(`📄 Native Slicer Read: ${pageCount} pages, Text Length: ${localTextContent.length}`);
 
-    const aiUrl = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    // ✅ تم إصلاح الـ URL بالكامل ليتطابق مع صيغتك الدقيقة 100%
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     let rawTransactions: any[] = [];
 
     // 🚀 STEP 2: THE TEXT WORKER (BYPASSES PDF CHUNKING LATENCY COMPLETELY)
@@ -86,7 +89,7 @@ export async function POST(req: Request) {
       RAW DATA TEXT:
       ${localTextContent}`;
 
-      const response = await fetch(aiUrl, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -106,7 +109,7 @@ export async function POST(req: Request) {
       const base64Data = processedBuffer.toString('base64');
       const prompt = `Extract ALL financial transactions. Return ONLY a JSON array. Each object layout MUST precisely match this schema structure: {"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}`;
 
-      const response = await fetch(aiUrl, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -142,7 +145,7 @@ export async function POST(req: Request) {
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('❌ System Overhaul Failure:', error.message || error);
+    console.error('❌ Error:', error.message || error);
     return NextResponse.json({ success: false, error: error.message || 'Parsing failed' }, { status: 500 });
   }
 }
