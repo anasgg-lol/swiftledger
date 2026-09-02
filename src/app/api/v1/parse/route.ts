@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; // Next.js official Route segment configuration config object [A]
+export const maxDuration = 60; // Next.js official Route segment configuration
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your lightweight core asset [A]
+const WORKING_MODEL = 'gemini-flash-lite-latest'; 
 
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
@@ -38,14 +38,13 @@ function parseGeminiResponse(text: string): any[] {
   }
 }
 
-// ============ 🧱 STEP 1: THE SLICER (NATIVE INDEPENDENT PAGE SEPARATION) ============
+// ============ 🧱 STEP 1: THE SLICER (NATIVE ULTRA-FAST PAGE SPLITTER) ============
 async function slicePDFIntoSinglePages(buffer: Buffer): Promise<Buffer[]> {
   try {
     const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
     const totalPages = pdfDoc.getPageCount();
     const chunks: Buffer[] = [];
 
-    // Chops EVERY single page independently to guarantee minimum payload network latency [A]
     for (let i = 0; i < totalPages; i++) {
       const newDoc = await PDFDocument.create();
       const [copiedPage] = await newDoc.copyPages(pdfDoc, [i]);
@@ -87,11 +86,10 @@ export async function POST(req: Request) {
     const pageCount = pdfDoc.getPageCount();
     console.log(`📄 Detected ${pageCount} pages`);
 
-    // 🧱 EXECUTE THE SLICER IMMEDIATELY FOR ALL ENGINES [A]
     const singlePages = await slicePDFIntoSinglePages(buffer);
     
-    // Clean string interpolation template literal format string fixed [A]
-    const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    // ✅ طريقة الـ Template Literal الصحيحة والمجربة المطابقة لطلبك 100%
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact model layout structure: [{"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}]`;
 
     // ============ 🚀 STEP 2: THE WORKER (TRUE PARALLEL ASYNC CONCURRENCY STREAM) ============
@@ -130,7 +128,6 @@ export async function POST(req: Request) {
       return parseGeminiResponse(text);
     });
 
-    // Resolve all multi-threaded operations concurrently at once across the wire [A]
     const resolvedSegments = await Promise.all(chunkPromises);
     let rawTransactions: any[] = [];
     for (const segment of resolvedSegments) {
