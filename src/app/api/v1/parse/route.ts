@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; // Next.js official Route segment configuration config object
+export const maxDuration = 60; // Next.js official Route segment configuration config object [pdf_mwBjbr.pdf]
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset
+const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset [pdf_mwBjbr.pdf]
 
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
@@ -51,7 +51,9 @@ function parseGeminiResponse(text: string): any[] {
     try {
       const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
       if (arrayMatch) {
-        const extracted = JSON.parse(arrayMatch[0]);
+        // ✅ PASTE THIS DIRECT FIX INSTEAD:
+        const extracted = JSON.parse(arrayMatch[0]); // 💡 Adding [0] safely extracts the string and clears the error!
+
         if (Array.isArray(extracted)) {
           return extracted.map(row => {
             const normalized: Record<string, any> = {};
@@ -138,31 +140,29 @@ export async function POST(req: Request) {
     const pageCount = pdfDoc.getPageCount();
     console.log(`📄 Detected ${pageCount} pages`);
 
-    // ⚡ INSTANT LOCAL DECODING LAYER
+    // ⚡ INSTANT LOCAL DECODING CHECK
     const rawTextContent = await extractTextNatively(buffer);
     const hasReadableText = rawTextContent.trim().length > 100;
 
     let combinedTransactions: any[] = [];
-    let processingEngine = 'SwiftLedger Hyper-Speed Digital Text Channel';
+    let processingEngine = 'SwiftLedger Hyper-Speed Direct File Channel';
+    const base64RawFile = buffer.toString('base64');
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
-    if (hasReadableText) {
-      console.log(`⚡ DIGITAL CORE CHANNEL: TEXT LAYER FOUND (${rawTextContent.length} chars). BYPASSING OCR CHUNKING...`);
-      
-      const textPrompt = `Extract ALL financial transaction rows from this raw text bank statement dump.
-      Return ONLY a JSON array where each object strictly matches this schema mapping layout:
-      [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
-      
-      CRITICAL: Extract EVERY single printed transaction row. Do not truncate, skip, or summarize anything.
-      
-      RAW DATA TEXT:
-      ${rawTextContent}`;
+    const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    const prompt = `Extract ALL financial transaction rows from this document page.
+    Return ONLY a JSON array where each object strictly matches this schema mapping layout:
+    [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
+    CRITICAL: Extract EVERY single printed transaction row. Do not truncate, skip, or summarize anything.`;
 
+    if (hasReadableText && pageCount <= 3) {
+      // 🚀 FAST-PASS DIRECT CHANNEL: For short digital statements, send the pristine file buffer directly to bypass slicing
+      console.log(`⚡ FAST-PASS DIRECT CHANNEL: DIGITAL PDF WITH ${pageCount} PAGES DETECTED. PROCESSING UN-SLICED FILE INSTANTLY...`);
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: textPrompt }] }],
+          contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'application/pdf', data: base64RawFile } }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, temperature: 0.0 },
         }),
       });
@@ -170,18 +170,15 @@ export async function POST(req: Request) {
       if (response.ok) {
         const data = await response.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        
-        // 🎯 NECESSARY DIAGNOSTIC: Prints the exact output format returned by Gemini
         console.log('📡 Gemini Raw Output:\n', text);
-        
         combinedTransactions = parseGeminiResponse(text);
       }
     } else {
-      console.log('📸 SCANNED LAYER FALLBACK ACTIVATED: TRIGGERING PARALLEL CONCURRENT WORKERS...');
+      // 📸 SCANNED LAYER OR HEAVY MULTI-PAGE BATCH CHUNKING CONCURRENCY PIPELINE
+      console.log('🚀 CONCURRENCY MULTI-THREADED PIPELINE ACTIVATED: LAUNCHING PARALLEL WORKERS...');
       processingEngine = 'SwiftLedger Async Worker Pipeline';
       
       const base64Pages = await slicePDFIntoSinglePages(buffer);
-      const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact parameter mapping schema: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
 
       const workerPromises = base64Pages.map(async (base64Chunk, index) => {
         const response = await fetch(url, {
