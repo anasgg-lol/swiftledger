@@ -3,7 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 
 export const maxDuration = 60; // Next.js official Route segment configuration config object
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB limit matching original script
 const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset
 
 if (typeof global.DOMMatrix === 'undefined') {
@@ -30,7 +30,7 @@ function parseGeminiResponse(text: string): any[] {
     const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (arrayMatch) {
       try {
-        const extracted = JSON.parse(arrayMatch[0]); // 💡 Fixed TypeScript RegExpMatchArray casting type error!
+        const extracted = JSON.parse(arrayMatch[0]); // Fixed RegExpMatchArray element indexing safely
         if (Array.isArray(extracted)) return extracted;
       } catch {}
     }
@@ -43,7 +43,7 @@ async function slicePDFIntoSinglePages(buffer: Buffer): Promise<string[]> {
   const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
   const totalPages = pdfDoc.getPageCount();
   
-  // Maps page indices into raw base64 data string arrays instantly
+  // Maps page indices into raw base64 data string arrays instantly inside local memory threads
   const slicePromises = Array.from({ length: totalPages }, async (_, i) => {
     const newDoc = await PDFDocument.create();
     const [copiedPage] = await newDoc.copyPages(pdfDoc, [i]);
@@ -58,7 +58,7 @@ async function slicePDFIntoSinglePages(buffer: Buffer): Promise<string[]> {
 // ============ MAIN SERVICE CORE ============
 export async function POST(req: Request) {
   try {
-    // 🔥 SILENCES THE NATIVE PDF-PARSE CANVAS DEP WARNINGS INSIDE THE CONSOLE METRICS:
+    // 🔥 SILENCES THE NATIVE PDF-PARSE CANVAS DEP WARNINGS INSIDE THE SERVER CONSOLE LOGS:
     const originalWarn = console.warn;
     console.warn = (...args) => {
       const combined = args.join(' ');
@@ -91,11 +91,11 @@ export async function POST(req: Request) {
     const pageCount = pdfDoc.getPageCount();
     console.log(`📄 Detected ${pageCount} pages`);
 
-    // Execute Slicer to chop the document apart into memory page strings
+    // Execute Slicer to chop the document apart into memory page strings instantly
     const base64Pages = await slicePDFIntoSinglePages(buffer);
     
-    // ✅ UNIFIED CLEAN TEMPLATE STRINGS LITERAL ENFORCED TO MATCH ENVIRONMENT SPECIFICATIONS 100%
-    const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    // ✅ BACK TO YOUR EXACT PRECISE TEMPLATE LITERAL PATTERN WITHOUT INTERPOLATION MISSES:
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact parameter mapping schema: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
 
     // ============ 🚀 STEP 2: THE WORKER (EXECUTE ASYNC PARALLEL CONCURRENCY HANDSHAKES) ============
@@ -133,7 +133,7 @@ export async function POST(req: Request) {
       return parseGeminiResponse(text);
     });
 
-    // Resolve all independent microsecond worker streams concurrently over the wire
+    // Resolve all independent microsecond worker streams concurrently over the wire all at once
     const resolvedSegments = await Promise.all(workerPromises);
     let combinedTransactions: any[] = [];
     for (const segment of resolvedSegments) {
