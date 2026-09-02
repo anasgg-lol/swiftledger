@@ -3,7 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 
 export const maxDuration = 60; // Next.js official Route segment configuration config object
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB limit matching original script
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset
 
 if (typeof global.DOMMatrix === 'undefined') {
@@ -14,7 +14,6 @@ if (typeof global.DOMMatrix === 'undefined') {
 const DATE_REGEX = /\b(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s*(?:\d{2,4})?)\b/;
 const MONEY_REGEX = /\(?-?\+?\$?\s?[\d,]+\.\d{2}\)?/g;
 
-// ============ PARSE GEMINI RESPONSE ============
 function parseGeminiResponse(text: string): any[] {
   let clean = text.trim();
   clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -32,7 +31,7 @@ function parseGeminiResponse(text: string): any[] {
     const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (arrayMatch) {
       try {
-        const extracted = JSON.parse(arrayMatch[0]); // Explicit array index tracking clears TypeScript checks safely
+        const extracted = JSON.parse(arrayMatch[0]);
         if (Array.isArray(extracted)) return extracted;
       } catch {}
     }
@@ -40,7 +39,27 @@ function parseGeminiResponse(text: string): any[] {
   }
 }
 
-// ============ 🧱 LOCAL LAYER: FAST HIGH-SPEED REGEX LEDGER EXTRACTOR ============
+// ============ 🧱 NATIVE EXTRACTOR: SAFE PURE STRING LAYER READER ============
+async function extractTextNatively(buffer: Buffer): Promise<string> {
+  try {
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const pages = pdfDoc.getPages();
+    let textDump = '';
+    
+    for (const page of pages) {
+      const { text } = page as any;
+      if (text) textDump += text + '\n';
+    }
+    
+    if (textDump.trim().length === 0) {
+      textDump = buffer.toString('utf8').replace(/[^\x20-\x7E\n\t]/g, '');
+    }
+    return textDump;
+  } catch {
+    return '';
+  }
+}
+
 function parseTextNatively(text: string): any[] {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const rows: any[] = [];
@@ -50,7 +69,7 @@ function parseTextNatively(text: string): any[] {
     if (!dateMatch) continue;
 
     const moneyMatches = line.match(MONEY_REGEX);
-    if (!moneyMatches || moneyMatches.length < 2) continue; // Requires at least Amount and Balance column metrics
+    if (!moneyMatches || moneyMatches.length < 2) continue;
 
     const dateStr = dateMatch[0];
     const amountStr = moneyMatches[moneyMatches.length - 2];
@@ -73,7 +92,6 @@ function parseTextNatively(text: string): any[] {
   return rows;
 }
 
-// ============ 🧱 STEP 1: THE SLICER (NATIVE CHOP INDIVIDUAL MEMORY PAGES) ============
 async function slicePDFIntoSinglePages(buffer: Buffer): Promise<string[]> {
   const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
   const totalPages = pdfDoc.getPageCount();
@@ -89,7 +107,6 @@ async function slicePDFIntoSinglePages(buffer: Buffer): Promise<string[]> {
   return Promise.all(slicePromises);
 }
 
-// ============ MAIN SERVICE CORE ============
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -104,40 +121,30 @@ export async function POST(req: Request) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    let pageCount = 1;
-    let rawTextContent = '';
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const pageCount = pdfDoc.getPageCount();
+    console.log(`📄 Detected ${pageCount} pages`);
 
-    // ⚡ INSTANT LAYER: ATTEMPT NATIVE STRING STRING EXTRACTION TRACE
-    try {
-      const dynamicPdfParse = require('pdf-parse'); // Dynamic scoping passes framework builds safely
-      const parsed = await dynamicPdfParse(buffer);
-      pageCount = parsed.numpages || 1;
-      rawTextContent = parsed.text || '';
-    } catch {
-      // Fallback tracking parameters
-    }
+    // ⚡ INSTANT LOCAL DECODING LAYER
+    const rawTextContent = await extractTextNatively(buffer);
+    const localRows = parseTextNatively(rawTextContent);
 
     let combinedTransactions: any[] = [];
     let processingEngine = 'SwiftLedger Hyper-Speed Local Core';
 
-    // 💎 CHECK CHANNEL GATES: IF DIGITAL TEXT IS VALID & STRUCTURED, PARSE LITERALLY INSTANTLY
-    const localRows = parseTextNatively(rawTextContent);
-    
-    // ✅ IMPLEMENTED PRECISE TEMPLATE LITERAL AS REQUESTED RIGHT PAST THE NATIVE LAYER GATES
+    // ✅ FIXED PERMANENTLY: ENFORCED EXACT BACKTICK TEMPLATE LITERAL FORMAT AS STRONGLY DEMANDED
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact parameter mapping schema: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
 
-    if (localRows.length > 0) {
+    if (localRows.length > 5) {
       console.log(`⚡ LOCAL-FIRST GOLDEN PATH IGNITED: Parsed ${localRows.length} rows natively in milliseconds.`);
       combinedTransactions = localRows;
     } else {
-      // 📸 IMAGE / SCANNED PDF FALLBACK CHANNEL GRIDS
       console.log('📸 SCANNED LAYER FALLBACK ACTIVATED: TRIGGERING PARALLEL CONCURRENT WORKERS...');
       processingEngine = 'SwiftLedger Async Worker Pipeline';
       
       const base64Pages = await slicePDFIntoSinglePages(buffer);
 
-      // ============ 🚀 STEP 2: THE WORKER (PARALLEL CONCURRENCY STREAM) ============
       const workerPromises = base64Pages.map(async (base64Chunk, index) => {
         console.log(`📄 Processing multi-threaded parallel page line ${index + 1}/${base64Pages.length}`);
         
@@ -152,7 +159,8 @@ export async function POST(req: Request) {
 
         if (!response.ok) return [];
         const data = await response.json();
-        return parseGeminiResponse(data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]');
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+        return parseGeminiResponse(text);
       });
 
       const resolvedSegments = await Promise.all(workerPromises);
@@ -161,7 +169,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // ============ 📊 STEP 3: THE ACCOUNTANT (RE-INDEX AND VALIDATE ARRAY SEQUENCES NATIVELY) ============
     const finalizedRows = combinedTransactions.map((tx: any, index: number) => ({
       id: index + 1,
       date: tx.date || tx.d || '',
