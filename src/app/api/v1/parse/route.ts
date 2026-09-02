@@ -148,7 +148,7 @@ export async function POST(req: Request) {
     let processingEngine = 'SwiftLedger Hyper-Speed Direct File Channel';
     const base64RawFile = buffer.toString('base64');
 
-    const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     const prompt = `Extract ALL financial transaction rows from this document page.
     Return ONLY a JSON array where each object strictly matches this schema mapping layout:
     [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
