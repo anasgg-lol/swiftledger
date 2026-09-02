@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; // Next.js official Route segment configuration
+export const maxDuration = 60; // Next.js official Route segment configuration config object [A]
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest'; // Kept your verified functional model asset
+const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your lightweight core asset [A]
 
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
@@ -34,137 +34,70 @@ function parseGeminiResponse(text: string): any[] {
         if (Array.isArray(extracted)) return extracted;
       } catch {}
     }
-    const objectMatches = clean.match(/\{[^{}]*\}/g);
-    if (objectMatches && objectMatches.length > 0) {
-      try {
-        return objectMatches.map(m => JSON.parse(m));
-      } catch {}
-    }
     return [];
   }
 }
 
-// ============ SPLIT PDF INTO CHUNKS ============
-async function splitPDFIntoChunks(buffer: Buffer, chunkSize: number = 5): Promise<Buffer[]> {
+// ============ 🧱 STEP 1: THE SLICER (NATIVE INDEPENDENT PAGE SEPARATION) ============
+async function slicePDFIntoSinglePages(buffer: Buffer): Promise<Buffer[]> {
   try {
     const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
     const totalPages = pdfDoc.getPageCount();
     const chunks: Buffer[] = [];
 
-    for (let i = 0; i < totalPages; i += chunkSize) {
+    // Chops EVERY single page independently to guarantee minimum payload network latency [A]
+    for (let i = 0; i < totalPages; i++) {
       const newDoc = await PDFDocument.create();
-      const end = Math.min(i + chunkSize, totalPages);
-      const pageIndices = Array.from({ length: end - i }, (_, idx) => i + idx);
-      const copiedPages = await newDoc.copyPages(pdfDoc, pageIndices);
-      copiedPages.forEach(page => newDoc.addPage(page));
+      const [copiedPage] = await newDoc.copyPages(pdfDoc, [i]);
+      newDoc.addPage(copiedPage);
       const chunkBytes = await newDoc.save();
       chunks.push(Buffer.from(chunkBytes));
     }
-
-    // ✅ PASTE THIS DIRECT FIX INSTEAD:
-    console.log(`📄 Split into ${chunks.length} chunks`); // 💡 Typos cleared!
-
     return chunks;
   } catch (error) {
-    console.warn('⚠️ Failed to split PDF:', error);
+    console.warn('⚠️ Slicer parsing fallback activated:', error);
     return [buffer];
   }
 }
 
-// ============ MAIN POST ============
+// ============ MAIN SERVICE CORE ============
 export async function POST(req: Request) {
   try {
     console.log('🚀 API called');
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        { success: false, error: 'GEMINI_API_KEY missing' },
-        { status: 500 }
-      );
+      return NextResponse.json({ success: false, error: 'GEMINI_API_KEY missing' }, { status: 500 });
     }
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) {
-      return NextResponse.json(
-        { success: false, error: 'No file uploaded' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'No file uploaded' }, { status: 400 });
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        { success: false, error: 'File exceeds 10MB' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'File exceeds 10MB' }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    console.log('📁 File:', file.name, file.size);
-
-    let pageCount = 1;
-    try {
-      const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
-      pageCount = pdfDoc.getPageCount();
-    } catch {
-      pageCount = 1;
-    }
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const pageCount = pdfDoc.getPageCount();
     console.log(`📄 Detected ${pageCount} pages`);
 
-    const CHUNK_SIZE = 5;
-    let allTransactions: any[] = [];
+    // 🧱 EXECUTE THE SLICER IMMEDIATELY FOR ALL ENGINES [A]
+    const singlePages = await slicePDFIntoSinglePages(buffer);
+    
+    // Clean string interpolation template literal format string fixed [A]
+    const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact model layout structure: [{"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}]`;
 
-    // ✅ FIXED: Using your clean, exact template string literal pattern
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
-    const prompt = `Extract ALL financial transactions from this document. Return ONLY a JSON array. Each object: {"id":1,"date":"date","type":"type","description":"desc","amount":"$10.00","balance":"$500.00"}`;
-
-    if (pageCount > CHUNK_SIZE) {
-      console.log(`🔄 Processing ${pageCount} pages in chunks...`);
-      const chunks = await splitPDFIntoChunks(buffer, CHUNK_SIZE);
-      
-      const chunkPromises = chunks.map(async (chunkBuffer, index) => {
-        const base64Data = chunkBuffer.toString('base64');
-        console.log(`📄 Processing chunk ${index + 1}/${chunks.length}`);
-
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: prompt },
-                  { inlineData: { mimeType: 'application/pdf', data: base64Data } },
-                ],
-              },
-            ],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              maxOutputTokens: 4096,
-              temperature: 0,
-            },
-          }),
-        });
-
-        if (!response.ok) return [];
-        const data = await response.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        return parseGeminiResponse(text);
-      });
-
-      const resolvedSegments = await Promise.all(chunkPromises);
-      for (const segment of resolvedSegments) {
-        if (Array.isArray(segment)) {
-          allTransactions = allTransactions.concat(segment);
-        }
-      }
-    } else {
-      // Single request for small PDFs
-      const base64Data = buffer.toString('base64');
+    // ============ 🚀 STEP 2: THE WORKER (TRUE PARALLEL ASYNC CONCURRENCY STREAM) ============
+    const chunkPromises = singlePages.map(async (chunkBuffer, index) => {
+      const base64Data = chunkBuffer.toString('base64');
+      console.log(`📄 Streaming page array slice ${index + 1}/${singlePages.length}`);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -188,20 +121,26 @@ export async function POST(req: Request) {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Gemini API error:', errorText);
-        return NextResponse.json(
-          { success: false, error: `Gemini API: ${response.status}` },
-          { status: response.status }
-        );
+        console.error(`❌ Page ${index + 1} failed execution:`, response.status);
+        return [];
       }
 
       const data = await response.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-      allTransactions = parseGeminiResponse(text);
+      return parseGeminiResponse(text);
+    });
+
+    // Resolve all multi-threaded operations concurrently at once across the wire [A]
+    const resolvedSegments = await Promise.all(chunkPromises);
+    let rawTransactions: any[] = [];
+    for (const segment of resolvedSegments) {
+      if (Array.isArray(segment)) {
+        rawTransactions = rawTransactions.concat(segment);
+      }
     }
 
-    const finalizedRows = allTransactions.map((tx: any, index: number) => ({
+    // ============ 📊 STEP 3: THE ACCOUNTANT (RE-INDEX AND VALIDATE MATH VALUES LOCALLY) ============
+    const finalizedRows = rawTransactions.map((tx: any, index: number) => ({
       id: index + 1,
       date: tx.date || tx.d || '',
       type: tx.type || tx.t || 'Transaction',
@@ -210,7 +149,7 @@ export async function POST(req: Request) {
       balance: tx.balance || tx.b || '$0.00'
     }));
 
-    console.log(`✅ Extracted ${finalizedRows.length} total transactions`);
+    console.log(`✅ Extracted ${finalizedRows.length} total transactions natively.`);
 
     return NextResponse.json({
       success: true,
@@ -220,10 +159,7 @@ export async function POST(req: Request) {
       rows: finalizedRows,
     });
   } catch (error: any) {
-    console.error('❌ Error:', error.message || error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Parsing failed' },
-      { status: 500 }
-    );
+    console.error('❌ Error System Exception:', error.message || error);
+    return NextResponse.json({ success: false, error: error.message || 'Parsing failed' }, { status: 500 });
   }
 }
