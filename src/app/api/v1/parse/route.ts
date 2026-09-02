@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 
-export const maxDuration = 60; // Next.js official Route segment configuration config object [pdf_mwBjbr.pdf]
+export const maxDuration = 60; // Next.js official Route segment configuration config object
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset [pdf_mwBjbr.pdf]
+const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset
 
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
@@ -27,6 +27,8 @@ function parseGeminiResponse(text: string): any[] {
       rawRows = parsed.transactions;
     } else if (parsed.rows && Array.isArray(parsed.rows)) {
       rawRows = parsed.rows;
+    } else if (parsed.data && Array.isArray(parsed.data)) {
+      rawRows = parsed.data;
     } else {
       for (const key of Object.keys(parsed)) {
         if (Array.isArray(parsed[key])) {
@@ -36,7 +38,7 @@ function parseGeminiResponse(text: string): any[] {
       }
     }
 
-    // 🔥 THE FIX: Normalize every single key token to lowercase to prevent mapping skips
+    // Normalize every single key token to lowercase to prevent mapping skips
     return rawRows.map(row => {
       const normalized: Record<string, any> = {};
       Object.keys(row).forEach(key => {
@@ -168,6 +170,10 @@ export async function POST(req: Request) {
       if (response.ok) {
         const data = await response.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+        
+        // 🎯 NECESSARY DIAGNOSTIC: Prints the exact output format returned by Gemini
+        console.log('📡 Gemini Raw Output:\n', text);
+        
         combinedTransactions = parseGeminiResponse(text);
       }
     } else {
@@ -178,8 +184,6 @@ export async function POST(req: Request) {
       const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this exact parameter mapping schema: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
 
       const workerPromises = base64Pages.map(async (base64Chunk, index) => {
-        console.log(`📄 Processing multi-threaded parallel page line ${index + 1}/${base64Pages.length}`);
-        
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -201,9 +205,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // ============ 📊 STEP 3: THE ACCOUNTANT (NORMALIZE ALL FIELDS EXFORCED BY TIERS NATIVELY) ============
+    // ============ 📊 STEP 3: THE ACCOUNTANT (NORMALIZE ALL FIELDS NATIVELY) ============
     const finalizedRows = combinedTransactions.map((tx: any, index: number) => {
-      // Safely reads lowercased normalized keys regardless of model variations
       const dateVal = tx.date || tx.d || '';
       const typeVal = tx.type || tx.t || 'Transaction';
       const descVal = tx.description || tx.desc || tx.particulars || '';
