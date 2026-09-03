@@ -28,8 +28,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `No product found for $${price}` }, { status: 400 });
     }
 
-    // 🎯 Use the simpler checkout_links endpoint
-    const requestBody = {
+    // Attempt 1: checkout_links
+    const simpleBody = {
       product_id: productId,
       redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
       metadata: {
@@ -39,32 +39,67 @@ export async function POST(req: Request) {
       },
     };
 
-    console.log('🚀 Sending to Whop (checkout_links):', JSON.stringify(requestBody, null, 2));
+    console.log('🚀 Attempt 1: POST /v2/checkout_links', JSON.stringify(simpleBody, null, 2));
 
-    const response = await fetch('https://api.whop.com/api/v2/checkout_links', {
+    let response = await fetch('https://api.whop.com/api/v2/checkout_links', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${whopSecret}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(simpleBody),
     });
 
-    const data = await response.json();
+    let data = await response.json();
 
-    if (!response.ok) {
-      console.error('❌ Whop API error:', data);
-      const errorMessage = data.message || data.error || JSON.stringify(data);
-      return NextResponse.json(
-        { error: errorMessage },
-        { status: response.status }
-      );
+    if (response.ok) {
+      return NextResponse.json({ url: data.url });
     }
 
-    // The checkout URL is in data.url
-    return NextResponse.json({ url: data.url });
+    console.log('❌ Attempt 1 failed:', data);
+
+    // Attempt 2: checkout_configurations with plan
+    const planBody = {
+      plan: {
+        product_id: productId,
+        price: price * 100,
+        interval: 'one_time',
+        currency: 'usd',
+      },
+      redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
+      metadata: {
+        fileName: fileName || 'statement',
+        formats: (formats || []).join(','),
+        bank: bank || '',
+      },
+    };
+
+    console.log('🔄 Attempt 2: POST /v2/checkout_configurations', JSON.stringify(planBody, null, 2));
+
+    response = await fetch('https://api.whop.com/api/v2/checkout_configurations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${whopSecret}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(planBody),
+    });
+
+    data = await response.json();
+
+    if (response.ok) {
+      const checkoutUrl = `https://whop.com/checkout/${data.id}`;
+      return NextResponse.json({ url: checkoutUrl });
+    }
+
+    console.error('❌ Both attempts failed. Last error:', data);
+    const errorMessage = data.message || data.error || JSON.stringify(data);
+    return NextResponse.json(
+      { error: `Whop API error: ${errorMessage}` },
+      { status: response.status }
+    );
   } catch (error: any) {
-    console.error('🔥 Whop checkout creation error:', error);
+    console.error('🔥 Unhandled exception:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

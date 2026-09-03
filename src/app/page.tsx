@@ -401,7 +401,7 @@ export default function Home() {
   };
 
   // ============================================================
-  // 🔥 PAYMENT HANDLER – calls the new API route
+  // 🔥 PAYMENT HANDLER – calls the API and shows error details
   // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
@@ -433,9 +433,8 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok || !data.url) {
-        // Extract error message properly
-        const errorMsg = data.error || 'Checkout creation failed';
-        throw new Error(errorMsg);
+        // data.error now contains the full error message from Whop
+        throw new Error(data.error || 'Checkout creation failed');
       }
 
       window.open(data.url, '_blank');
