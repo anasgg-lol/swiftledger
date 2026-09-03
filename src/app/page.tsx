@@ -27,10 +27,10 @@ function parseCurrency(value: string): number {
   const trimmed = value.trim();
   const isParenthesisNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
   const hasMinusSign = trimmed.includes('-');
-  
-  let cleaned = trimmed.replace(/[^0-9.]/g, ''); 
+
+  let cleaned = trimmed.replace(/[^0-9.]/g, '');
   let numericValue = parseFloat(cleaned) || 0;
-  
+
   if (isParenthesisNegative || hasMinusSign) {
     numericValue = -Math.abs(numericValue);
   }
@@ -40,7 +40,7 @@ function parseCurrency(value: string): number {
 function getSignedAmount(row: Transaction): number {
   const amount = parseCurrency(row.amount);
   const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS', 'WIRE OUT'];
-  
+
   if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
     return -amount;
   }
@@ -238,27 +238,44 @@ export default function Home() {
     ofx: { label: '🏦 .OFX', desc: 'Microsoft Money, Quicken', color: 'text-amber-400' },
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
+
+  // Reads whatever the customer actually selected before checkout and releases
+  // ALL of those formats — not just a hardcoded CSV — then cleans up storage.
+  const releasePendingFiles = () => {
+    const rawPending = localStorage.getItem('pendingDownload');
+    if (!rawPending) return;
+    try {
+      const pendingData = JSON.parse(rawPending);
+      const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
+      downloadAllFormats(pendingData.rows, baseName, pendingData.formats || ['csv'], pendingData.bank || '');
+      alert('🎉 Success! Payment verified via server webhook. Your files are downloading now.');
+      localStorage.removeItem('pendingDownload');
+      localStorage.removeItem('activePassToken');
+    } catch (err) {
+      console.error('Realtime file release error:', err);
+    }
+  };
+
   useEffect(() => {
-    // 💡 لقط الـ Token المحمي فوراً من الـ localStorage عند إعادة تحميل الصفحة! [pdf_XZdc6j.pdf]
-    const savedActiveToken = localStorage.getItem('activePassToken');
-    if (!savedActiveToken) return;
+    let globalChannel: any = null;
 
     import('@/app/lib/supabaseClient').then(({ supabase }) => {
-      console.log('📡 INITIALIZING SECURE RESILIENT REALTIME CHANNELS FOR TOKEN:', savedActiveToken);
+      console.log('📡 RADAR STATUS DETECTOR: SCANNING SECURE REALTIME WEBSOCKET INFRASTRUCTURE...');
 
-      const channel = supabase
-        .channel('schema-db-changes')
+      globalChannel = supabase
+        .channel('realtime-ledger-sync')
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'payment_receipts' },
+          { event: 'UPDATE', schema: 'public', table: 'ledger_orders' },
           (payload: any) => {
-            const incomingToken = payload?.new?.pass_token;
+            const updatedOrderId = payload?.new?.order_id;
+            const currentSessionTrackingToken = (window as any).activeTrackingOrderId;
 
-            // عزل وفحص الإيصال المالي القادم من الـ Webhook ومطابقته بالـ Token الثابت
-            if (incomingToken && incomingToken === savedActiveToken && payload?.new?.payment_status === 'completed') {
-              console.log('⚡ SERVER-SIDE WEBHOOK CONFIRMED! RELEASING DOCUMENTS...');
+            // Isolate incoming streaming payloads and check if our specific order row swapped to 'completed'
+            if (updatedOrderId && updatedOrderId === currentSessionTrackingToken && payload?.new?.payment_status === 'completed') {
+              console.log('⚡ SERVER-SIDE WHOP WEBHOOK SIGNAL REGISTERED LIVE OVER SOCKET! RELEASING FILES...');
 
-              const rawPending = localStorage.getItem('pendingDownload');
+              const rawPending = sessionStorage.getItem('pendingDownload');
               if (rawPending) {
                 try {
                   const pendingData = JSON.parse(rawPending);
@@ -270,7 +287,7 @@ export default function Home() {
                     ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
                   ].join('\n');
                   
-                  // ⚡ قذف وتنزيل الـ CSV أوتوماتيكياً في لمح البصر وبدون أي نقرات! [pdf_XZdc6j.pdf]
+                  // ⚡ INSTANTANEOUS CSV BLOB INJECTOR DOWN TO TRADING harddrive
                   const blob = new Blob([csvContent], { type: 'text/csv' });
                   const downloadUrl = URL.createObjectURL(blob);
                   const link = document.createElement('a');
@@ -281,56 +298,30 @@ export default function Home() {
                   document.body.removeChild(link);
                   URL.revokeObjectURL(downloadUrl);
 
-                  alert('🎉 Success! Payment Verified via Server Webhook. Download started.');
+                  alert('🎉 Transaction Authenticated Server-Side! Your transaction sheets have been exported.');
                   
-                  // تنظيف الـ الذاكرة لحماية الخصوصية وتأمين السيستم [pdf_XZdc6j.pdf]
-                  localStorage.removeItem('pendingDownload');
-                  localStorage.removeItem('activePassToken');
+                  // Complete cleanup of variables to freeze memory leak footprint trails
+                  sessionStorage.removeItem('pendingDownload');
+                  (window as any).activeTrackingOrderId = null;
                 } catch (err) {
-                  console.error('Realtime file generation error:', err);
+                  console.error('File generation engine runtime block:', err);
                 }
               }
             }
           }
         )
         .subscribe();
-
-      // فحص سريع عند التحميل (Instant Check): إذا كان الـ Webhook أسرع من الـ Refresh وسجل الداتا مسبقاً [pdf_XZdc6j.pdf]
-      supabase
-        .from('payment_receipts')
-        .select('*')
-        .eq('pass_token', savedActiveToken)
-        .eq('payment_status', 'completed')
-        .single()
-        .then(({ data }) => {
-          if (data) {
-            console.log('⚡ INSTANT RECONCILIATION DETECTED ON REFRESH! RELEASING...');
-            const rawPending = localStorage.getItem('pendingDownload');
-            if (rawPending) {
-              const pendingData = JSON.parse(rawPending);
-              const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
-              const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
-              const csvContent = [headers.join(','), ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
-              const blob = new Blob([csvContent], { type: 'text/csv' });
-              const downloadUrl = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = downloadUrl;
-              link.download = baseName + '.csv';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(downloadUrl);
-              localStorage.removeItem('pendingDownload');
-              localStorage.removeItem('activePassToken');
-            }
-          }
-        });
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
     });
+
+    return () => {
+      if (globalChannel) {
+        import('@/app/lib/supabaseClient').then(({ supabase }) => {
+          supabase.removeChannel(globalChannel);
+        });
+      }
+    };
   }, [parsedData, fileName]);
+
   // ============ FILE UPLOAD ============
   const handleFileUpload = async (file: File) => {
     setLoading(true);
@@ -360,7 +351,7 @@ export default function Home() {
       }
 
       const data = await res.json();
-      
+
       if (data.success) {
         const rows = data.rows || [];
         setParsedData(rows);
@@ -368,7 +359,7 @@ export default function Home() {
 
         const priceInfo = getPrice(data.page_count || 1);
         const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
-        
+
         let totalCredits = 0, totalDebits = 0;
         rows.forEach((tx: any) => {
           const cleanedAmt = parseCurrency(tx.amount);
@@ -476,31 +467,51 @@ export default function Home() {
       return;
     }
 
-    // توليد التوكن التزامني الفريد والمحمي
-    const uniquePassToken = `TOKEN_${Date.now()}_${Math.random().toString(36).substring(5)}`;
-
-    // 💡 تأمين وحفظ الداتا والـ Token في الـ localStorage لكسر كاش الـ Hard Page Reloads! [pdf_XZdc6j.pdf]
-    localStorage.setItem('activePassToken', uniquePassToken);
-    localStorage.setItem('pendingDownload', JSON.stringify({
+    // Initialize your secure locally-available state mapping arrays
+    sessionStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
       fileName: fileName || 'statement',
       formats: formats,
       bank: selectedBank,
     }));
 
-    // شحن الرابط بالـ pass_token والـ Metadata ليقرأها الـ Webhook الخاص بـ Whop
-    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${uniquePassToken}&metadata[pass_token]=${uniquePassToken}`;
+    try {
+      // 💡 THE UPGRADE: Dynamically connect and write an immutable pending order row into Supabase first!
+      const { supabase } = await import('@/app/lib/supabaseClient');
+      
+      const { data: newOrder, error } = await supabase
+        .from('ledger_orders')
+        .insert({
+          file_name: fileName || 'statement',
+          total_rows: parsedData.length,
+          payment_status: 'pending'
+        })
+        .select()
+        .single();
 
-    // فتح الدفع في نافذة جديدة، والـ Whop سيعيد توجيه الصفحة الأصلية ميكانيكياً
-    window.open(checkoutUrl, '_blank');
+      if (error || !newOrder) throw new Error(error?.message || 'Database ledger row generation failed.');
+
+      const activeOrderId = newOrder.order_id;
+      (window as any).activeTrackingOrderId = activeOrderId; // Map to memory slots for realtime query isolating loops
+
+      console.log(`📝 IMMUTABLE PENDING ORDER SECCURED: [${activeOrderId}]. Redirecting to secure billing portal...`);
+
+      // 🚀 Pass the order_id clean through both query string fields and Whop custom metadata vectors
+      const checkoutUrl = `${baseCheckoutUrl}?order_id=${activeOrderId}&metadata[order_id]=${activeOrderId}`;
+      window.open(checkoutUrl, '_blank');
+
+    } catch (dbErr: any) {
+      console.error('❌ Failed to establish server-side transaction anchor lines:', dbErr);
+      alert('Database connection timeout. Restoring secure operational routing gates...');
+    }
   };
 
   const handleDownloadAfterPayment = () => {
     if (!pendingDownload) return;
-    
+
     const { rows, fileName, formats, bank } = pendingDownload;
     downloadAllFormats(rows, fileName, formats, bank);
-    
+
     sessionStorage.removeItem('pendingDownload');
     setPendingDownload(null);
   };
@@ -519,7 +530,7 @@ export default function Home() {
   // ============ RENDER ============
   return (
     <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-start p-6 relative font-sans overflow-x-hidden">
-      
+
       {/* Ambient glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-emerald-500/5 rounded-full blur-[140px] pointer-events-none" />
 
@@ -625,7 +636,7 @@ export default function Home() {
               </div>
               <div className="w-full max-w-md">
                 <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div 
+                  <div
                     className="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-300"
                     style={{ width: `${Math.min(100, (loadingTime / 14) * 100)}%` }}
                   />
@@ -778,7 +789,7 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
-  
+
                   {parsedData.slice(0, 5).map((row) => (
                     <tr key={row.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-2.5 font-medium text-white/90">{row.date}</td>
@@ -788,8 +799,8 @@ export default function Home() {
                       <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
                     </tr>
                   ))}
-  
-  
+
+
                   {parsedData.slice(5, 7).map((row) => (
                     <tr key={row.id} className="select-none blur-[3px] opacity-25 pointer-events-none">
                       <td className="p-2.5 font-medium text-white/60">{row.date}</td>

@@ -49,15 +49,21 @@ public/
 src/
   app/
     api/
+      checkout/
+        route.ts
       v1/
         parse/
           route.ts
+        webhook/
+          whop/
+            route.ts
     components/
       Footer.tsx
     features/
       page.tsx
     lib/
       supabaseClient.ts
+      whop-sdk.ts
     payment/
       cancel/
         page.tsx
@@ -111,6 +117,62 @@ This section contains the contents of the repository's files.
 
 <file path="public/window.svg">
 <svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
+</file>
+
+<file path="src/app/api/checkout/route.ts">
+import { NextResponse } from 'next/server';
+import { whopClient } from '@/lib/whop-sdk';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // server-only secret, NOT the anon key
+);
+
+// Map your tiers to the actual Plan IDs from your Whop dashboard (not the hosted page URLs)
+const PLAN_IDS: Record<string, string> = {
+  '5': 'plan_XXXXXXXXX',   // Freelancer
+  '25': 'plan_XXXXXXXXX',  // Business
+  '45': 'plan_XXXXXXXXX',  // Corporate
+  '85': 'plan_XXXXXXXXX',  // Enterprise
+};
+
+export async function POST(req: Request) {
+  try {
+    const { tier } = await req.json();
+    const planId = PLAN_IDS[tier];
+    if (!planId) {
+      return NextResponse.json({ error: 'Invalid tier' }, { status: 400 });
+    }
+
+    // Create the pending order row FIRST so we have an order_id to attach
+    const { data: order, error: dbError } = await supabaseAdmin
+      .from('orders')
+      .insert({ tier, status: 'pending' })
+      .select()
+      .single();
+
+    if (dbError || !order) {
+      console.error('Failed to create order row:', dbError);
+      return NextResponse.json({ error: 'Could not start checkout' }, { status: 500 });
+    }
+
+    const checkoutConfig = await whopClient.checkoutConfigurations.create({
+      company_id: process.env.WHOP_COMPANY_ID!,
+      plan_id: planId,
+      metadata: { order_id: order.order_id },
+      redirect_url: `${process.env.NEXT_PUBLIC_SITE_URL}/payment/success?order_id=${order.order_id}`,
+    });
+
+    return NextResponse.json({
+      checkoutUrl: `https://whop.com/checkout/${checkoutConfig.id}`,
+      orderId: order.order_id,
+    });
+  } catch (error: any) {
+    console.error('Checkout creation failed:', error?.message);
+    return NextResponse.json({ error: 'Checkout creation failed' }, { status: 500 });
+  }
+}
 </file>
 
 <file path="src/app/components/Footer.tsx">
@@ -299,6 +361,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+</file>
+
+<file path="src/app/lib/whop-sdk.ts">
+import Whop from '@whop/sdk';
+
+export const whopClient = new Whop({
+  apiKey: process.env.WHOP_API_KEY!, // Company API Key, from Whop Dashboard > Developer
+});
 </file>
 
 <file path="src/app/payment/cancel/page.tsx">
@@ -938,61 +1008,6 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 }
 </file>
 
-<file path="src/app/payment/success/page.tsx">
-'use client';
-
-import { Suspense, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
-
-function PaymentSuccessContent() {
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    const isVerified = searchParams.get('payment_verified') === 'true';
-
-    if (isVerified) {
-      console.log('📡 BROADCASTING HIGH-SPEED CROSS-TAB TRANSACTION SIGNAL...');
-      
-      // Fires the synchronized cross-tab state modifier key across active tab instances instantly!
-      localStorage.setItem('whop_payment_success_signal', 'true');
-      
-      // Smooth UX: Give it 500ms to safely flush the cross-tab thread, then kill the checkout window tab!
-      setTimeout(() => {
-        try {
-          window.close();
-        } catch (e) {
-          console.log('Tab close skipped by browser sandbox permissions. Ready for manual close.');
-        }
-      }, 500);
-    }
-  }, [searchParams]);
-
-  return (
-    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6 text-center">
-      <div className="max-w-md">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center animate-pulse">
-          <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-        <h1 className="text-xl font-bold text-white">Secure Link Authorized</h1>
-        <p className="text-slate-400 mt-2 text-xs">
-          Syncing transaction hashes with your active dashboard... This window can now be safely closed.
-        </p>
-      </div>
-    </main>
-  );
-}
-
-export default function PaymentSuccess() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-[#030712]" />}>
-      <PaymentSuccessContent />
-    </Suspense>
-  );
-}
-</file>
-
 <file path=".gitignore">
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
@@ -1043,6 +1058,56 @@ next-env.d.ts
 
 </file>
 
+<file path="src/app/api/v1/webhook/whop/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { whopClient } from '@/lib/whop-sdk';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export async function POST(request: NextRequest) {
+  const requestBodyText = await request.text(); // MUST be raw text, not parsed JSON, for signature verification
+  const headers = Object.fromEntries(request.headers);
+
+  let webhookData;
+  try {
+    webhookData = whopClient.webhooks.unwrap(requestBodyText, { headers });
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err);
+    return new Response('Invalid signature', { status: 400 });
+  }
+
+  if (webhookData.type === 'payment.succeeded') {
+    const orderId = webhookData.data?.metadata?.order_id;
+    const paymentId = webhookData.data?.id;
+
+    if (orderId) {
+      // Idempotency guard: only update if not already marked paid with this payment id
+      const { data: existing } = await supabaseAdmin
+        .from('orders')
+        .select('status, whop_payment_id')
+        .eq('order_id', orderId)
+        .single();
+
+      if (existing && existing.status !== 'paid') {
+        await supabaseAdmin
+          .from('orders')
+          .update({ status: 'paid', whop_payment_id: paymentId, paid_at: new Date().toISOString() })
+          .eq('order_id', orderId);
+      }
+    } else {
+      console.warn('payment.succeeded webhook missing order_id metadata:', webhookData.data?.id);
+    }
+  }
+
+  // Return 2xx quickly, always — Whop retries on non-2xx
+  return new Response('OK', { status: 200 });
+}
+</file>
+
 <file path="package.json">
 {
   "name": "document-parser",
@@ -1084,6 +1149,48 @@ next-env.d.ts
 }
 </file>
 
+<file path="src/app/payment/success/page.tsx">
+'use client';
+
+import { Suspense, useEffect } from 'react';
+
+function PaymentSuccessContent() {
+  useEffect(() => {
+    // Smooth user experience: Give the webhook thread 1.5 seconds to flush, then close the checkout tab cleanly
+    const timer = setTimeout(() => {
+      try {
+        window.close();
+      } catch {
+        window.location.href = 'about:blank';
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="max-w-md bg-slate-950/50 border border-slate-800/80 p-8 rounded-3xl backdrop-blur-md shadow-2xl">
+        <div className="w-12 h-16 mx-auto mb-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center animate-pulse">
+          <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h1 className="text-xl font-bold text-white">Invoice Validated</h1>
+        <p className="text-slate-400 mt-2 text-xs">
+          Syncing cryptographic signatures with your dashboard layers... You can now close this tab.
+        </p>
+      </div>
+    </main>
+  );
+}
+
+export default function PaymentSuccess() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#030712]" />}><PaymentSuccessContent /></Suspense>
+  );
+}
+</file>
+
 <file path="src/app/page.tsx">
 'use client';
 
@@ -1114,10 +1221,10 @@ function parseCurrency(value: string): number {
   const trimmed = value.trim();
   const isParenthesisNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
   const hasMinusSign = trimmed.includes('-');
-  
-  let cleaned = trimmed.replace(/[^0-9.]/g, ''); 
+
+  let cleaned = trimmed.replace(/[^0-9.]/g, '');
   let numericValue = parseFloat(cleaned) || 0;
-  
+
   if (isParenthesisNegative || hasMinusSign) {
     numericValue = -Math.abs(numericValue);
   }
@@ -1127,7 +1234,7 @@ function parseCurrency(value: string): number {
 function getSignedAmount(row: Transaction): number {
   const amount = parseCurrency(row.amount);
   const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS', 'WIRE OUT'];
-  
+
   if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
     return -amount;
   }
@@ -1325,43 +1432,78 @@ export default function Home() {
     ofx: { label: '🏦 .OFX', desc: 'Microsoft Money, Quicken', color: 'text-amber-400' },
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
-  useEffect(() => {
-    // 📡 فتح رادار الاستقبال اللاسلكي بين التابات
-    const channel = new BroadcastChannel('swiftledger_payment_channel');
-    
-    channel.onmessage = (event) => {
-      if (event.data?.status === 'RELEASE_FILES_NOW') {
-        console.log('🚀 INSTANT SIGNAL DETECTED! RELEASING FILES DIRECTLY...');
-        
-        const rawPending = sessionStorage.getItem('pendingDownload');
-        if (rawPending) {
-          try {
-            const pendingData = JSON.parse(rawPending);
-            const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
-            const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
-            const csvContent = [headers.join(','), ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
-            
-            const blob = new Blob([csvContent], { type: 'text/csv' });
-            const downloadUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = baseName + '.csv';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(downloadUrl);
 
-            sessionStorage.removeItem('pendingDownload');
-            localStorage.removeItem('whop_payment_success_signal');
-          } catch (err) {
-            console.error('Download extraction error:', err);
+  // Reads whatever the customer actually selected before checkout and releases
+  // ALL of those formats — not just a hardcoded CSV — then cleans up storage.
+  const releasePendingFiles = () => {
+    const rawPending = localStorage.getItem('pendingDownload');
+    if (!rawPending) return;
+    try {
+      const pendingData = JSON.parse(rawPending);
+      const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
+      downloadAllFormats(pendingData.rows, baseName, pendingData.formats || ['csv'], pendingData.bank || '');
+      alert('🎉 Success! Payment verified via server webhook. Your files are downloading now.');
+      localStorage.removeItem('pendingDownload');
+      localStorage.removeItem('activePassToken');
+    } catch (err) {
+      console.error('Realtime file release error:', err);
+    }
+  };
+
+  useEffect(() => {
+    // 💡 Pick up the active pass token from localStorage on mount / page reload
+    const savedActiveToken = localStorage.getItem('activePassToken');
+    if (!savedActiveToken) return;
+
+    let channelRef: any = null;
+
+    import('@/app/lib/supabaseClient').then(({ supabase }) => {
+      console.log('📡 INITIALIZING SECURE RESILIENT REALTIME CHANNELS FOR TOKEN:', savedActiveToken);
+
+      const channel = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'payment_receipts' },
+          (payload: any) => {
+            const incomingToken = payload?.new?.pass_token;
+            if (incomingToken && incomingToken === savedActiveToken && payload?.new?.payment_status === 'completed') {
+              console.log('⚡ SERVER-SIDE WEBHOOK CONFIRMED! RELEASING DOCUMENTS...');
+              releasePendingFiles();
+            }
           }
-        }
+        )
+        .subscribe();
+
+      channelRef = channel;
+
+      // Instant check on load in case the webhook already fired before this tab was ready
+      supabase
+        .from('payment_receipts')
+        .select('*')
+        .eq('pass_token', savedActiveToken)
+        .eq('payment_status', 'completed')
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            console.log('⚡ INSTANT RECONCILIATION DETECTED ON REFRESH! RELEASING...');
+            releasePendingFiles();
+          }
+        });
+    });
+
+    // FIX: run once on mount, not on every parsedData/fileName change — the old
+    // dependency array tore down and rebuilt this listener every time a new file
+    // was parsed, which could drop a payment confirmation mid-checkout.
+    return () => {
+      if (channelRef) {
+        import('@/app/lib/supabaseClient').then(({ supabase }) => {
+          supabase.removeChannel(channelRef);
+        });
       }
     };
+  }, []);
 
-    return () => channel.close();
-  }, [parsedData, fileName]);
   // ============ FILE UPLOAD ============
   const handleFileUpload = async (file: File) => {
     setLoading(true);
@@ -1391,7 +1533,7 @@ export default function Home() {
       }
 
       const data = await res.json();
-      
+
       if (data.success) {
         const rows = data.rows || [];
         setParsedData(rows);
@@ -1399,7 +1541,7 @@ export default function Home() {
 
         const priceInfo = getPrice(data.page_count || 1);
         const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
-        
+
         let totalCredits = 0, totalDebits = 0;
         rows.forEach((tx: any) => {
           const cleanedAmt = parseCurrency(tx.amount);
@@ -1502,31 +1644,32 @@ export default function Home() {
     }
 
     const baseCheckoutUrl = whopUrls[stats.price.toString()];
-    // نزيدو الـ Timestamp مع الـ Random Token لفرض فاتورة مستقلة ومجردة في كل رفعة ملف! [pdf_XZdc6j.pdf]
-    
-    
     if (!baseCheckoutUrl) {
-      alert(`No checkout URL found for price $${stats.price}. Please contact support.`);
+      alert(`No checkout URL found for price $${stats.price}.`);
       return;
     }
 
-    sessionStorage.setItem('pendingDownload', JSON.stringify({
+    const uniquePassToken = `TOKEN_${Date.now()}_${Math.random().toString(36).substring(5)}`;
+
+    localStorage.setItem('activePassToken', uniquePassToken);
+    localStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
       fileName: fileName || 'statement',
       formats: formats,
       bank: selectedBank,
     }));
-    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${uniquePassToken}&metadata[pass_token]=${uniquePassToken}`;
+
     window.open(checkoutUrl, '_blank');
-    alert('🛒 Opening Whop checkout in a new tab. Complete payment there, then come back and click "Download" to get your CSV.');
   };
 
   const handleDownloadAfterPayment = () => {
     if (!pendingDownload) return;
-    
+
     const { rows, fileName, formats, bank } = pendingDownload;
     downloadAllFormats(rows, fileName, formats, bank);
-    
+
     sessionStorage.removeItem('pendingDownload');
     setPendingDownload(null);
   };
@@ -1545,7 +1688,7 @@ export default function Home() {
   // ============ RENDER ============
   return (
     <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-start p-6 relative font-sans overflow-x-hidden">
-      
+
       {/* Ambient glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-emerald-500/5 rounded-full blur-[140px] pointer-events-none" />
 
@@ -1651,7 +1794,7 @@ export default function Home() {
               </div>
               <div className="w-full max-w-md">
                 <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div 
+                  <div
                     className="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-300"
                     style={{ width: `${Math.min(100, (loadingTime / 14) * 100)}%` }}
                   />
@@ -1804,7 +1947,7 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
-  
+
                   {parsedData.slice(0, 5).map((row) => (
                     <tr key={row.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-2.5 font-medium text-white/90">{row.date}</td>
@@ -1814,8 +1957,8 @@ export default function Home() {
                       <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
                     </tr>
                   ))}
-  
-  
+
+
                   {parsedData.slice(5, 7).map((row) => (
                     <tr key={row.id} className="select-none blur-[3px] opacity-25 pointer-events-none">
                       <td className="p-2.5 font-medium text-white/60">{row.date}</td>
