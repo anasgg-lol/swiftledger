@@ -3,6 +3,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Footer from './components/Footer';
 import { supabase } from './lib/supabaseClient';
+
+
 interface Transaction {
   id: number;
   date: string;
@@ -208,7 +210,7 @@ function getPrice(pageCount: number): { price: number; label: string; tier: stri
   if (pageCount <= 50) return { price: 45, label: 'Corporate', tier: '21–50 pages', badge: '💼' };
   return { price: 85, label: 'Enterprise', tier: '51+ pages', badge: '🏢' };
 }
-
+export const dynamic = 'force-dynamic';
 // ============ MAIN COMPONENT ============
 export default function Home() {
   const [parsedData, setParsedData] = useState<Transaction[]>([]);
