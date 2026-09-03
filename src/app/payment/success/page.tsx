@@ -7,12 +7,14 @@ import Link from 'next/link';
 function PaymentSuccessContent() {
   const searchParams = useSearchParams();
   const [downloadTriggered, setDownloadTriggered] = useState(false);
-  const [fileNameOnly, setFileNameNameOnly] = useState('');
+  const [fileNameOnly, setFileNameOnly] = useState('');
 
   useEffect(() => {
     // 📡 INTERCEPT SIGNAL WRAPPERS: لقط الإشارة القادمة من Whop لايف
     const isVerified = searchParams.get('payment_verified') === 'true';
-    const rawPending = sessionStorage.getItem('pendingDownload');
+    
+    // 🚀 THE OVERHAUL: سحب الداتا المؤمنة من الـ localStorage بنجاح عابر للنوافذ!
+    const rawPending = localStorage.getItem('pendingDownload');
 
     if (isVerified && rawPending && !downloadTriggered) {
       try {
@@ -21,7 +23,7 @@ function PaymentSuccessContent() {
 
         if (rows && rows.length) {
           const baseName = fileName.replace(/\.[^/.]+$/, '');
-          setFileNameNameOnly(fileName);
+          setFileNameOnly(fileName);
           const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
           
           // Reconstruct the spreadsheet matrix inside browser memory blocks in 0.01 seconds
@@ -42,8 +44,6 @@ function PaymentSuccessContent() {
           URL.revokeObjectURL(url);
           
           setDownloadTriggered(true);
-          
-          // نترك البيانات في الـ Session لكي لا تضيع إذا المستخدم عمل Refresh خطأ
         }
       } catch (err) {
         console.error('Auto download execution mismatch:', err);
@@ -53,13 +53,13 @@ function PaymentSuccessContent() {
 
   return (
     <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6 text-center">
-      <div className="max-w-md bg-slate-950/50 border border-slate-800/80 p-8 rounded-3xl backdrop-blur-md shadow-2xl">
+      <div className="max-w-md bg-slate-950/50 border border-slate-800/80 p-8 rounded-3xl backdrop-blur-md shadow-2xl animate-fade-up">
         <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
           <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
             <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">🎉 Total Parsing Victory!</h1>
+        <h1 className="text-2xl font-bold text-white tracking-tight">🎉 Instant File Secured!</h1>
         <p className="text-slate-400 mt-2 text-sm leading-relaxed">
           Your highly optimized transaction ledger has been compiled and downloaded securely to your computer.
         </p>
@@ -70,14 +70,16 @@ function PaymentSuccessContent() {
           </div>
         )}
 
-        {/* ✅ THE ENTERPRISE FIX: نلغي الـ Auto-redirect الأوتوماتيكي البايخ ونعطيه زرار يرجع بيه وقت ما يحب */}
         <div className="mt-6 border-t border-slate-800/60 pt-5">
           <Link 
             href="/"
-            onClick={() => sessionStorage.removeItem('pendingDownload')} // تنظيف عند العودة الطوعية
+            onClick={() => {
+              localStorage.removeItem('pendingDownload');
+              localStorage.removeItem('whop_payment_success_signal');
+            }}
             className="inline-flex items-center justify-center px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold rounded-xl text-xs shadow-lg transition-all duration-200"
           >
-            ← Back to Dashboard Terminal
+            ← Return to Dashboard
           </Link>
         </div>
       </div>

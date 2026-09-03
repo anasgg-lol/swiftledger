@@ -415,23 +415,24 @@ export default function Home() {
     }
 
     const baseCheckoutUrl = whopUrls[stats.price.toString()];
-    // نزيدو الـ Timestamp مع الـ Random Token لفرض فاتورة مستقلة ومجردة في كل رفعة ملف! [pdf_XZdc6j.pdf]
-    
-    
     if (!baseCheckoutUrl) {
-      alert(`No checkout URL found for price $${stats.price}. Please contact support.`);
+      alert(`No checkout URL found for price $${stats.price}.`);
       return;
     }
 
-    sessionStorage.setItem('pendingDownload', JSON.stringify({
+    // 💡 THE OVERHAUL: تخزين دائم ومضمون 100% للداتا في الـ localStorage لكسر عزل النوافذ الجديدة!
+    localStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
       fileName: fileName || 'statement',
       formats: formats,
       bank: selectedBank,
     }));
+
+    // نزيدو الـ Dynamic token لكسر كاش العضويات الميتة في Whop
     const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+    // نفتح الدفع في نفس الصفحة، والـ Whop يتكفل بالباقي
     window.location.href = checkoutUrl;
-    alert('🛒 Opening Whop checkout in a new tab. Complete payment there, then come back and click "Download" to get your CSV.');
   };
 
   const handleDownloadAfterPayment = () => {
