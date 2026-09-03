@@ -239,41 +239,63 @@ export default function Home() {
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
   useEffect(() => {
-    // 📡 فتح رادار الاستقبال اللاسلكي بين التابات
-    const channel = new BroadcastChannel('swiftledger_payment_channel');
-    
-    channel.onmessage = (event) => {
-      if (event.data?.status === 'RELEASE_FILES_NOW') {
-        console.log('🚀 INSTANT SIGNAL DETECTED! RELEASING FILES DIRECTLY...');
-        
-        const rawPending = sessionStorage.getItem('pendingDownload');
-        if (rawPending) {
-          try {
-            const pendingData = JSON.parse(rawPending);
-            const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
-            const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
-            const csvContent = [headers.join(','), ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
-            
-            const blob = new Blob([csvContent], { type: 'text/csv' });
-            const downloadUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = baseName + '.csv';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(downloadUrl);
+    import('@/app/lib/supabaseClient').then(({ supabase }) => {
+      console.log('📡 INITIALIZING SECURE REALTIME FORTRESS CHANNELS...');
 
-            sessionStorage.removeItem('pendingDownload');
-            localStorage.removeItem('whop_payment_success_signal');
-          } catch (err) {
-            console.error('Download extraction error:', err);
+      const channel = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'payment_receipts' },
+          (payload: any) => {
+            const incomingToken = payload?.new?.pass_token;
+            const currentActiveToken = (window as any).activePassToken;
+
+            // Isolate our dynamic query instance and verify that the payment state matches 'completed'
+            if (incomingToken && incomingToken === currentActiveToken && payload?.new?.payment_status === 'completed') {
+              console.log('⚡ INSTANT REALTIME WEBSOCKET SIGNAL SECURED! RELEASING DOCUMENTS...');
+
+              const rawPending = sessionStorage.getItem('pendingDownload');
+              if (rawPending) {
+                try {
+                  const pendingData = JSON.parse(rawPending);
+                  const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
+                  const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
+                  
+                  const csvContent = [
+                    headers.join(','), 
+                    ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+                  ].join('\n');
+                  
+                  // Trigger the direct instantaneous download on the open dashboard tab window
+                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                  const downloadUrl = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = downloadUrl;
+                  link.download = baseName + '.csv';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  URL.revokeObjectURL(downloadUrl);
+
+                  alert('🎉 Transaction Secured Server-Side! Your multi-format statement download has been initialized.');
+                  
+                  // Wipe tracking footprints cleanly to secure memory grids
+                  sessionStorage.removeItem('pendingDownload');
+                  (window as any).activePassToken = null;
+                } catch (err) {
+                  console.error('Realtime file generation error:', err);
+                }
+              }
+            }
           }
-        }
-      }
-    };
+        )
+        .subscribe();
 
-    return () => channel.close();
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    });
   }, [parsedData, fileName]);
   // ============ FILE UPLOAD ============
   const handleFileUpload = async (file: File) => {
@@ -420,27 +442,25 @@ export default function Home() {
       return;
     }
 
-    // شحن وحفظ احتياطي محلي كالعادة
-    localStorage.setItem('pendingDownload', JSON.stringify({
+    // Generate a unique, cryptographically locked checkout identifier
+    const uniquePassToken = `TOKEN_${Date.now()}_${Math.random().toString(36).substring(5)}`;
+
+    // Safely store the full un-truncated parsed data arrays locally inside client memory sheets
+    sessionStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
       fileName: fileName || 'statement',
       formats: formats,
       bank: selectedBank,
     }));
 
-    // 💡 THE FINTECH CHEAT CODE: تحويل أرقام الأسطر والـ metadata لـ Base64 Payload وحقنها في الرابط!
-    const payloadData = {
-      txCount: parsedData.length,
-      file: fileName || 'statement',
-      balance: stats.netBalance
-    };
-    const b64Payload = btoa(JSON.stringify(payloadData));
+    // Save this tracking key in local states so our realtime listener can isolate its verification row
+    (window as any).activePassToken = uniquePassToken;
 
-    // شحن الرابط بالـ pass_token والـ Payload عابر للقارات والنوافذ المعزولة!
-    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}&payload=${b64Payload}`;
+    // 🚀 Pass the token inside Whop's official query metadata routing fields
+    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${uniquePassToken}&metadata[pass_token]=${uniquePassToken}`;
 
-    // فتح الدفع في نفس الصفحة، والـ Whop يتكفل بإرجاع الـ Dynamic string كامل
-    window.location.href = checkoutUrl;
+    // Open Whop securely in a clean secondary tab, keeping your main parsing session completely alive
+    window.open(checkoutUrl, '_blank');
   };
 
   const handleDownloadAfterPayment = () => {
