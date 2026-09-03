@@ -8,7 +8,7 @@ export default function PaymentSuccess() {
     // Signal the original tab that payment succeeded
     localStorage.setItem('whop_payment_complete', 'true');
 
-    // Optional: close this tab after 4 seconds (most browsers allow it if it was opened by window.open)
+    // Close this tab after 4 seconds
     setTimeout(() => {
       window.close();
     }, 4000);

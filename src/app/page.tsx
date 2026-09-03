@@ -416,15 +416,8 @@ export default function Home() {
   };
 
   // ============================================================
-  // 🔥 WHOP CHECKOUT URLS – REPLACE WITH YOUR REAL PRODUCT LINKS
+  // 🔥 NEW: DYNAMIC CHECKOUT – calls our API to create a fresh session
   // ============================================================
-  const whopUrls: Record<string, string> = {
-    '5': 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',      // <- change me
-    '25': 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',    // <- change me
-    '45': 'https://whop.com/vercel-3f41/swiftledger-corporate-21-50-pages/',    // <- change me
-    '85': 'https://whop.com/vercel-3f41/swiftledger-enterprise-51-pages/',    // <- change me
-  };
-
   const handlePayAndDownload = async () => {
     if (!stats) return;
 
@@ -434,13 +427,9 @@ export default function Home() {
       return;
     }
 
-    const checkoutUrl = whopUrls[stats.price.toString()];
-    if (!checkoutUrl) {
-      alert(`No Whop checkout link found for price $${stats.price}.`);
-      return;
-    }
+    const price = stats.price;
 
-    // Store all data needed for the download
+    // Save pending data for the cross‑tab handshake
     const pendingData = {
       rows: parsedData,
       fileName: fileName || 'statement',
@@ -450,8 +439,27 @@ export default function Home() {
     localStorage.setItem('pendingDownload', JSON.stringify(pendingData));
     localStorage.removeItem('whop_payment_complete');
 
-    // Open Whop in a new tab
-    window.open(checkoutUrl, '_blank');
+    try {
+      const response = await fetch('/api/v1/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price, fileName, formats, bank: selectedBank }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || 'Failed to create checkout session');
+      }
+
+      // Open the fresh Whop checkout in a new tab
+      window.open(data.url, '_blank');
+    } catch (error: any) {
+      console.error('Checkout creation error:', error);
+      alert(`Error starting checkout: ${error.message}`);
+      // Clean up so we don't leave stale data
+      localStorage.removeItem('pendingDownload');
+    }
   };
 
   const toggleFormat = (format: string) => {
