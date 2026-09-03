@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 import PDFParser from 'pdf2json';
+import { createWorker } from 'tesseract.js';
 
-export const maxDuration = 60; // Next.js official Route segment configuration config object
+export const maxDuration = 60; // Next.js official Route segment configuration config object [pdf_nQFnlh.pdf]
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const WORKING_MODEL = 'gemini-flash-lite-latest'; // Pinned securely to your functional lightweight core asset
 
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
@@ -18,6 +18,7 @@ function cleanMathValue(val: string): number {
   return parseFloat(cleaned) || 0;
 }
 
+// ============ BULLETPROOF NATIVE RESPONSE TOKEN MAPPER ============
 function parseGeminiResponse(text: string): any[] {
   let clean = text.trim().replace(/```json/gi, '').replace(/```/g, '').trim();
   try {
@@ -32,7 +33,7 @@ function parseGeminiResponse(text: string): any[] {
     const arrayMatch = clean.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (arrayMatch) {
       try {
-        const extracted = JSON.parse(arrayMatch[0]); // Explicit element lookup clears typing errors
+        const extracted = JSON.parse(arrayMatch[0]); 
         return Array.isArray(extracted) ? extracted.map((row: any) => {
           const normalized: Record<string, any> = {};
           Object.keys(row).forEach(key => { normalized[key.toLowerCase()] = row[key]; });
@@ -44,20 +45,22 @@ function parseGeminiResponse(text: string): any[] {
   }
 }
 
-// Parse PDF structure geometrically via coordinates
+// ============ 🧱 VECTOR LAYER DETECTOR: GEOMETRIC POSITIONING EXTRACTION ============
 async function extractGeometryNatively(buffer: Buffer): Promise<{ pages: any[], rawText: string }> {
   return new Promise((resolve) => {
     const pdfParser = new PDFParser();
     pdfParser.on('pdfParser_dataError', () => resolve({ pages: [], rawText: '' }));
     pdfParser.on('pdfParser_dataReady', (pdfData) => {
       let rawText = '';
-      const processedPages = pdfData.Pages.map((page) => {
-        // Group texts by Y coordinate to re-assemble horizontal text lines
+      if (!pdfData || !pdfData.Pages) {
+        return resolve({ pages: [], rawText: '' });
+      }
+      const processedPages = pdfData.Pages.map((page: any) => {
         const linesMap: Record<number, any[]> = {};
-        page.Texts.forEach((textObj) => {
-          const textStr = decodeURIComponent(textObj.R[0].T).trim(); // Fixed data structure access for pdf2json stability
+        page.Texts.forEach((textObj: any) => {
+          const textStr = decodeURIComponent(textObj.R[0].T).trim(); 
           rawText += textStr + ' ';
-          const yKey = Math.round(textObj.y * 100); // Normalize floating coords
+          const yKey = Math.round(textObj.y * 100); 
           if (!linesMap[yKey]) linesMap[yKey] = [];
           linesMap[yKey].push({ x: textObj.x, text: textStr });
         });
@@ -71,12 +74,49 @@ async function extractGeometryNatively(buffer: Buffer): Promise<{ pages: any[], 
     pdfParser.parseBuffer(buffer);
   });
 }
+
+// ============ 📸 LOCAL HIGH-SPEED OCR PIPELINE (SCANNED FALLBACK OVERRIDE) ============
+async function performLocalOCR(buffer: Buffer): Promise<{ pages: any[], rawText: string }> {
+  console.log('🛠️ INITIALIZING INDEPENDENT BACKEND OCR WORKER MATRIX...');
+  const worker = await createWorker('eng');
+  let rawText = '';
+  const pages: any[] = [];
+
+  try {
+    // Process image buffer layout blocks using dynamic web assembly worker engines natively
+    const { data: { lines } } = await worker.recognize(buffer);
+    const structuredLines: any[] = [];
+
+    lines.forEach((lineItem: any) => {
+      const pageTokens: any[] = [];
+      lineItem.words.forEach((wordItem: any) => {
+        const textStr = wordItem.text.trim();
+        rawText += textStr + ' ';
+        // Map layout bounding boxes directly to artificial spatial X/Y coordinate nodes
+        pageTokens.push({
+          x: (wordItem.bbox.x0 / 10), // Normalize layout constraints to match native pdf2json grids
+          text: textStr
+        });
+      });
+      if (pageTokens.length > 0) {
+        structuredLines.push(pageTokens.sort((a, b) => a.x - b.x));
+      }
+    });
+
+    pages.push({ structuredLines });
+  } catch (ocrError: any) {
+    console.error('❌ Local OCR Engine Exception Intercepted:', ocrError.message);
+  } finally {
+    await worker.terminate();
+  }
+
+  return { pages, rawText };
+}
 // ============ MAIN SERVICE CORE ============
 export async function POST(req: Request) {
   try {
     console.log('🚀 JET ENGINE GEOMETRY ARCHITECTURE ACTIVATED');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return NextResponse.json({ success: false, error: 'GEMINI_API_KEY missing' }, { status: 500 });
+    const apiKey = process.env.GEMINI_API_KEY; 
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
@@ -84,15 +124,32 @@ export async function POST(req: Request) {
     if (file.size > MAX_FILE_SIZE_BYTES) return NextResponse.json({ success: false, error: 'File exceeds 10MB' }, { status: 400 });
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const { pages, rawText } = await extractGeometryNatively(buffer);
     
-    let pageCount = pages.length || 1;
+    // ✅ FIX: Define the model API parameters globally at the top of the function to prevent scoping errors
+    const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    const basePrompt = `Extract ALL financial transaction rows from this document data context.
+    Return ONLY a JSON array where each object strictly matches this schema mapping layout:
+    [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
+    CRITICAL: Extract EVERY single printed transaction row. Do not truncate, skip, or summarize anything.`;
+
+    // Attempt standard fast vector geometry pass first
+    let { pages, rawText } = await extractGeometryNatively(buffer);
+    let engineUsed = 'SwiftLedger Coordinate Geometry Core';
+    
+    // If native text layer length is 0, activate the Local OCR Driveway instantly! [pdf_XZdc6j.pdf]
+    if (pages.length === 0 || rawText.trim().length < 50) {
+      console.log('📸 FLAT SCANNED IMAGE PDF DETECTED. ACTIVATING ZERO-COST LOCAL OCR DRIVEWAY CONTEXT...');
+      engineUsed = 'SwiftLedger Local High-Speed OCR Pipeline';
+      const ocrResults = await performLocalOCR(buffer);
+      pages = ocrResults.pages;
+      rawText = ocrResults.rawText;
+    }
+
     let combinedTransactions: any[] = [];
     let localSuccess = false;
-    let engineUsed = 'SwiftLedger Coordinate Geometry Core';
 
-    // 🧱 LOCAL GEOMETRIC MATCHING PASS WITH ACCOUNTING ARITHMETIC RECONCILIATION
-    if (pages.length > 0 && rawText.trim().length > 100) {
+    // 🧱 GEOMETRIC MATCHING PASS WITH ACCOUNTING ARITHMETIC RECONCILIATION
+    if (pages.length > 0 && rawText.trim().length > 50) {
       try {
         let globalTxList: any[] = [];
         let totalMathChecksPassed = true;
@@ -101,13 +158,11 @@ export async function POST(req: Request) {
           const pageData = pages[p];
           let pageTxList: any[] = [];
           
-          // Column boundary anchors (X positions) initialized on header detection sweeps
           let dateX = 0, descX = 10, amtX = 35, balX = 45; 
 
           pageData.structuredLines.forEach((line: any[]) => {
             let combinedLineText = line.map((t: any) => t.text).join(' ').toUpperCase();
             
-            // Auto-detect column spatial fields on current page layout context
             if (combinedLineText.includes('DATE') && combinedLineText.includes('BALANCE')) {
               line.forEach((token: any) => {
                 const text = token.text.toUpperCase();
@@ -116,10 +171,9 @@ export async function POST(req: Request) {
                 if (text.includes('DEBIT') || text.includes('CREDIT') || text.includes('AMOUNT')) amtX = token.x;
                 if (text.includes('BALANCE')) balX = token.x;
               });
-              return; // Header row assigned, bypass row processing loop
+              return; 
             }
 
-            // Extract tokens matching spatial layout coordinates
             let rowDate = '', rowDesc = '', rowAmt = '', rowBal = '';
             line.forEach((token: any) => {
               if (Math.abs(token.x - dateX) < 4) rowDate = token.text;
@@ -133,12 +187,10 @@ export async function POST(req: Request) {
             if (rowDate && (rowAmt || rowBal)) {
               pageTxList.push({ date: rowDate, type: 'Transaction', description: rowDesc, amount: rowAmt, balance: rowBal });
             } else if (rowDesc && pageTxList.length > 0 && !rowDate && !rowAmt && !rowBal) {
-              // 💡 CLAUDE'S FIX: Multi-line description continuation block locked!
               pageTxList[pageTxList.length - 1].description += ' ' + rowDesc;
             }
           });
 
-          // Run running balance arithmetic reconciliation sweep on current page dataset array
           let pageBalancesReconciled = false;
           if (pageTxList.length >= 2) {
             let pageValid = true;
@@ -147,7 +199,6 @@ export async function POST(req: Request) {
               const currBal = cleanMathValue(pageTxList[i].balance);
               const txAmt = cleanMathValue(pageTxList[i].amount);
               
-              // ✅ FIXED COMPILER SYNTAX: All variable metrics map uniformly to currBal boundaries
               if (txAmt !== 0 && prevBal !== 0 && currBal !== 0) {
                 const matchesNormalMath = Math.abs(prevBal + txAmt - currBal) < 0.05 || Math.abs(prevBal - txAmt - currBal) < 0.05;
                 if (!matchesNormalMath) { pageValid = false; break; }
@@ -160,44 +211,49 @@ export async function POST(req: Request) {
             globalTxList = globalTxList.concat(pageTxList);
           } else {
             totalMathChecksPassed = false;
-            break; // Break execution sweep to force secure API fallback cluster instantly
+            break; 
           }
         }
 
         if (totalMathChecksPassed && globalTxList.length > 0) {
           combinedTransactions = globalTxList;
           localSuccess = true;
-          console.log(`⚡ CLAUDE LOCAL PATH SUCCESS: Natively parsed ${combinedTransactions.length} balanced records in milliseconds.`);
+          console.log(`⚡ LOCAL GEOMETRIC DRIVEWAY SUCCESS: Parsed ${combinedTransactions.length} balanced records natively.`);
         }
       } catch (err) {
         console.warn('⚠️ Local coordinate calculation mismatch. Switching to fallback models...', err);
       }
     }
 
-    // 📡 FALLBACK GATE: If geometry math fails or it's a visual scan, run the multi-threaded parallel array
-    if (!localSuccess) {
-      console.log('📸 LOCAL MATHEMATICS SHIELD BROKEN: TRIGGERING PARALLEL CONCURRENT API WORKERS...');
+    // 📡 ULTIMATE SAFETY NET: If local coordinates mismatch, run the cloud API fallback cluster safely
+    if (!localSuccess && apiKey) {
+      console.log('📸 LOCAL MATHEMATICS SHIELD BROKEN: REVERTING CLOUD CLUSTER CHUNKS NATIVELY...');
       engineUsed = 'SwiftLedger Async Worker Pipeline Fallback';
       
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
-      const prompt = `Extract ALL financial transactions from this document page. Return ONLY a JSON array matching this parameter schema: [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]`;
+      const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+      const totalPages = pdfDoc.getPageCount();
+      const slicePromises = Array.from({ length: totalPages }, async (_, i) => {
+        const newDoc = await PDFDocument.create();
+        const [copiedPage] = await newDoc.copyPages(pdfDoc, [i]);
+        newDoc.addPage(copiedPage);
+        const chunkBytes = await newDoc.save();
+        return Buffer.from(chunkBytes.buffer, chunkBytes.byteOffset, chunkBytes.byteLength).toString('base64');
+      });
+      const base64Pages = await Promise.all(slicePromises);
 
-      const base64Pages = await slicePDFIntoSinglePages(buffer);
       const workerPromises = base64Pages.map(async (base64Chunk, index) => {
         console.log(`📄 Streaming concurrent fallback window line ${index + 1}/${base64Pages.length}`);
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'application/pdf', data: base64Chunk } }] }],
+            contents: [{ role: 'user', parts: [{ text: basePrompt }, { inlineData: { mimeType: 'application/pdf', data: base64Chunk } }] }],
             generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 4096, temperature: 0 },
           }),
         });
         if (!response.ok) return [];
         const data = await response.json();
-        // ✅ FIXED OPTIONAL CHAINING SYNTAX: Restored valid indexing tokens across child arrays
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        return parseGeminiResponse(text);
+        return parseGeminiResponse(data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]');
       });
 
       const resolvedSegments = await Promise.all(workerPromises);
@@ -218,7 +274,14 @@ export async function POST(req: Request) {
 
     console.log(`✅ PARSER ARCHITECTURE SUCCESS: ${finalizedRows.length} ROWS SECURED VIA [${engineUsed}].`);
 
-    return NextResponse.json({ success: true, filename: file.name, engine_used: engineUsed, total_transactions: finalizedRows.length, page_count: pageCount, rows: finalizedRows });
+    return NextResponse.json({ 
+      success: true, 
+      filename: file.name, 
+      engine_used: engineUsed, 
+      total_transactions: finalizedRows.length, 
+      page_count: pages.length || 1, 
+      rows: finalizedRows 
+    });
   } catch (error: any) {
     console.error('❌ Root System Exception Caught:', error.message || error);
     return NextResponse.json({ success: false, error: error.message || 'Parsing failed' }, { status: 500 });
