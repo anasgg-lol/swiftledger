@@ -379,9 +379,10 @@ export default function Home() {
     }
 
     const baseCheckoutUrl = whopUrls[stats.price.toString()];
-// نزيدو الـ Timestamp مع الـ Random Token لفرض فاتورة مستقلة ومجردة في كل رفعة ملف! [pdf_XZdc6j.pdf]
-    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    if (!checkoutUrl) {
+    // نزيدو الـ Timestamp مع الـ Random Token لفرض فاتورة مستقلة ومجردة في كل رفعة ملف! [pdf_XZdc6j.pdf]
+    
+    
+    if (!baseCheckoutUrl) {
       alert(`No checkout URL found for price $${stats.price}. Please contact support.`);
       return;
     }
@@ -392,7 +393,7 @@ export default function Home() {
       formats: formats,
       bank: selectedBank,
     }));
-
+    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}`;
     window.open(checkoutUrl, '_blank');
     alert('🛒 Opening Whop checkout in a new tab. Complete payment there, then come back and click "Download" to get your CSV.');
   };
