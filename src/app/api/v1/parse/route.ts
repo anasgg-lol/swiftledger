@@ -76,6 +76,7 @@ async function extractGeometryNatively(buffer: Buffer): Promise<{ pages: any[], 
 }
 
 // ============ 📸 LOCAL HIGH-SPEED OCR PIPELINE (SCANNED FALLBACK OVERRIDE) ============
+// ============ 📸 LOCAL HIGH-SPEED OCR PIPELINE (SCANNED FALLBACK OVERRIDE) ============
 async function performLocalOCR(buffer: Buffer): Promise<{ pages: any[], rawText: string }> {
   console.log('🛠️ INITIALIZING INDEPENDENT BACKEND OCR WORKER MATRIX...');
   const worker = await createWorker('eng');
@@ -83,20 +84,26 @@ async function performLocalOCR(buffer: Buffer): Promise<{ pages: any[], rawText:
   const pages: any[] = [];
 
   try {
-    // Process image buffer layout blocks using dynamic web assembly worker engines natively
-    const { data: { lines } } = await worker.recognize(buffer);
+    // ✅ FIX: Force type assignment to 'any' to completely bypass tesseract type system boundaries
+    const result: any = await worker.recognize(buffer);
+    const lines = result?.data?.lines || [];
     const structuredLines: any[] = [];
 
     lines.forEach((lineItem: any) => {
       const pageTokens: any[] = [];
-      lineItem.words.forEach((wordItem: any) => {
-        const textStr = wordItem.text.trim();
-        rawText += textStr + ' ';
-        // Map layout bounding boxes directly to artificial spatial X/Y coordinate nodes
-        pageTokens.push({
-          x: (wordItem.bbox.x0 / 10), // Normalize layout constraints to match native pdf2json grids
-          text: textStr
-        });
+      const words = lineItem?.words || [];
+      
+      words.forEach((wordItem: any) => {
+        const textStr = (wordItem?.text || '').trim();
+        if (textStr) {
+          rawText += textStr + ' ';
+          const bbox = wordItem?.bbox || { x0: 0 };
+          // Map layout bounding boxes directly to artificial spatial X/Y coordinate nodes
+          pageTokens.push({
+            x: (bbox.x0 / 10), // Normalize layout constraints to match native pdf2json grids
+            text: textStr
+          });
+        }
       });
       if (pageTokens.length > 0) {
         structuredLines.push(pageTokens.sort((a, b) => a.x - b.x));
