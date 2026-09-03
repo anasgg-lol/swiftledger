@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Footer from './components/Footer';
-import { supabase } from './lib/supabaseClient';
 
 interface Transaction {
   id: number;
@@ -22,7 +21,7 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
   { id: 6, date: '5th November 2026', type: 'Direct Debit', description: 'Fitness Club Membership', amount: '-£32.50', balance: '£368.50' },
 ];
 
-// ============ HARDENED CURRENCY PARSER ============
+// ============ CURRENCY PARSER ============
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const trimmed = value.trim();
@@ -36,16 +35,6 @@ function parseCurrency(value: string): number {
     numericValue = -Math.abs(numericValue);
   }
   return numericValue;
-}
-
-function getSignedAmount(row: Transaction): number {
-  const amount = parseCurrency(row.amount);
-  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS', 'WIRE OUT'];
-
-  if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
-    return -amount;
-  }
-  return amount;
 }
 
 // ============ FORMAT GENERATORS ============
@@ -217,7 +206,6 @@ export default function Home() {
   const [fileName, setFileName] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [currentPageCount, setCurrentPageCount] = useState<number>(1);
   const [loadingTime, setLoadingTime] = useState<number>(0);
   const [showStats, setShowStats] = useState(false);
   const [selectedBank, setSelectedBank] = useState<string>('');
@@ -329,8 +317,6 @@ export default function Home() {
       if (data.success) {
         const rows = data.rows || [];
         setParsedData(rows);
-        setCurrentPageCount(data.page_count || 1);
-
         const priceInfo = getPrice(data.page_count || 1);
         const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
 
@@ -389,7 +375,6 @@ export default function Home() {
   const loadDemo = () => {
     setFileName('sample_statement_demo.pdf');
     setParsedData(SAMPLE_DEMO_DATA);
-    setCurrentPageCount(6);
     const priceInfo = getPrice(6);
     let totalCredits = 0, totalDebits = 0;
     SAMPLE_DEMO_DATA.forEach((tx) => {
@@ -416,16 +401,16 @@ export default function Home() {
   };
 
   // ============================================================
-  // 🔥 UPDATED – calls our API to create a fresh checkout session
+  // 🔥 PAYMENT HANDLER – calls the new API route
   // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
 
     const formats = Object.keys(selectedFormats).filter((key) => selectedFormats[key]);
-      if (formats.length === 0) {
-        alert('Please select at least one format to export.');
-        return;
-      }
+    if (formats.length === 0) {
+      alert('Please select at least one format to export.');
+      return;
+    }
 
     const price = stats.price;
 
@@ -448,7 +433,7 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok || !data.url) {
-      // ✅ Extract the error message properly
+        // Extract error message properly
         const errorMsg = data.error || 'Checkout creation failed';
         throw new Error(errorMsg);
       }

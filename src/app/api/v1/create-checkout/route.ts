@@ -28,13 +28,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `No product found for $${price}` }, { status: 400 });
     }
 
+    // 🎯 Use the simpler checkout_links endpoint
     const requestBody = {
-      plan: {
-        product_id: productId,
-        price: price * 100,
-        interval: 'one_time',
-        currency: 'usd',
-      },
+      product_id: productId,
       redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
       metadata: {
         fileName: fileName || 'statement',
@@ -43,9 +39,9 @@ export async function POST(req: Request) {
       },
     };
 
-    console.log('🚀 Sending to Whop:', JSON.stringify(requestBody, null, 2));
+    console.log('🚀 Sending to Whop (checkout_links):', JSON.stringify(requestBody, null, 2));
 
-    const response = await fetch('https://api.whop.com/api/v2/checkout_configurations', {
+    const response = await fetch('https://api.whop.com/api/v2/checkout_links', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${whopSecret}`,
@@ -57,17 +53,16 @@ export async function POST(req: Request) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('❌ Whop API error response:', data);
-      // Return a clean error message
-      const errorMessage = data.message || data.error || 'Checkout creation failed';
+      console.error('❌ Whop API error:', data);
+      const errorMessage = data.message || data.error || JSON.stringify(data);
       return NextResponse.json(
         { error: errorMessage },
         { status: response.status }
       );
     }
 
-    const checkoutUrl = `https://whop.com/checkout/${data.id}`;
-    return NextResponse.json({ url: checkoutUrl });
+    // The checkout URL is in data.url
+    return NextResponse.json({ url: data.url });
   } catch (error: any) {
     console.error('🔥 Whop checkout creation error:', error);
     return NextResponse.json(
