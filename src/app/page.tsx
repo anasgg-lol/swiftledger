@@ -239,8 +239,12 @@ export default function Home() {
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
   useEffect(() => {
+    // 💡 لقط الـ Token المحمي فوراً من الـ localStorage عند إعادة تحميل الصفحة! [pdf_XZdc6j.pdf]
+    const savedActiveToken = localStorage.getItem('activePassToken');
+    if (!savedActiveToken) return;
+
     import('@/app/lib/supabaseClient').then(({ supabase }) => {
-      console.log('📡 INITIALIZING SECURE REALTIME FORTRESS CHANNELS...');
+      console.log('📡 INITIALIZING SECURE RESILIENT REALTIME CHANNELS FOR TOKEN:', savedActiveToken);
 
       const channel = supabase
         .channel('schema-db-changes')
@@ -249,13 +253,12 @@ export default function Home() {
           { event: 'INSERT', schema: 'public', table: 'payment_receipts' },
           (payload: any) => {
             const incomingToken = payload?.new?.pass_token;
-            const currentActiveToken = (window as any).activePassToken;
 
-            // Isolate our dynamic query instance and verify that the payment state matches 'completed'
-            if (incomingToken && incomingToken === currentActiveToken && payload?.new?.payment_status === 'completed') {
-              console.log('⚡ INSTANT REALTIME WEBSOCKET SIGNAL SECURED! RELEASING DOCUMENTS...');
+            // عزل وفحص الإيصال المالي القادم من الـ Webhook ومطابقته بالـ Token الثابت
+            if (incomingToken && incomingToken === savedActiveToken && payload?.new?.payment_status === 'completed') {
+              console.log('⚡ SERVER-SIDE WEBHOOK CONFIRMED! RELEASING DOCUMENTS...');
 
-              const rawPending = sessionStorage.getItem('pendingDownload');
+              const rawPending = localStorage.getItem('pendingDownload');
               if (rawPending) {
                 try {
                   const pendingData = JSON.parse(rawPending);
@@ -267,7 +270,7 @@ export default function Home() {
                     ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
                   ].join('\n');
                   
-                  // Trigger the direct instantaneous download on the open dashboard tab window
+                  // ⚡ قذف وتنزيل الـ CSV أوتوماتيكياً في لمح البصر وبدون أي نقرات! [pdf_XZdc6j.pdf]
                   const blob = new Blob([csvContent], { type: 'text/csv' });
                   const downloadUrl = URL.createObjectURL(blob);
                   const link = document.createElement('a');
@@ -278,11 +281,11 @@ export default function Home() {
                   document.body.removeChild(link);
                   URL.revokeObjectURL(downloadUrl);
 
-                  alert('🎉 Transaction Secured Server-Side! Your multi-format statement download has been initialized.');
+                  alert('🎉 Success! Payment Verified via Server Webhook. Download started.');
                   
-                  // Wipe tracking footprints cleanly to secure memory grids
-                  sessionStorage.removeItem('pendingDownload');
-                  (window as any).activePassToken = null;
+                  // تنظيف الـ الذاكرة لحماية الخصوصية وتأمين السيستم [pdf_XZdc6j.pdf]
+                  localStorage.removeItem('pendingDownload');
+                  localStorage.removeItem('activePassToken');
                 } catch (err) {
                   console.error('Realtime file generation error:', err);
                 }
@@ -291,6 +294,37 @@ export default function Home() {
           }
         )
         .subscribe();
+
+      // فحص سريع عند التحميل (Instant Check): إذا كان الـ Webhook أسرع من الـ Refresh وسجل الداتا مسبقاً [pdf_XZdc6j.pdf]
+      supabase
+        .from('payment_receipts')
+        .select('*')
+        .eq('pass_token', savedActiveToken)
+        .eq('payment_status', 'completed')
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            console.log('⚡ INSTANT RECONCILIATION DETECTED ON REFRESH! RELEASING...');
+            const rawPending = localStorage.getItem('pendingDownload');
+            if (rawPending) {
+              const pendingData = JSON.parse(rawPending);
+              const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
+              const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
+              const csvContent = [headers.join(','), ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+              const blob = new Blob([csvContent], { type: 'text/csv' });
+              const downloadUrl = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = downloadUrl;
+              link.download = baseName + '.csv';
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              URL.revokeObjectURL(downloadUrl);
+              localStorage.removeItem('pendingDownload');
+              localStorage.removeItem('activePassToken');
+            }
+          }
+        });
 
       return () => {
         supabase.removeChannel(channel);
@@ -442,24 +476,22 @@ export default function Home() {
       return;
     }
 
-    // Generate a unique, cryptographically locked checkout identifier
+    // توليد التوكن التزامني الفريد والمحمي
     const uniquePassToken = `TOKEN_${Date.now()}_${Math.random().toString(36).substring(5)}`;
 
-    // Safely store the full un-truncated parsed data arrays locally inside client memory sheets
-    sessionStorage.setItem('pendingDownload', JSON.stringify({
+    // 💡 تأمين وحفظ الداتا والـ Token في الـ localStorage لكسر كاش الـ Hard Page Reloads! [pdf_XZdc6j.pdf]
+    localStorage.setItem('activePassToken', uniquePassToken);
+    localStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
       fileName: fileName || 'statement',
       formats: formats,
       bank: selectedBank,
     }));
 
-    // Save this tracking key in local states so our realtime listener can isolate its verification row
-    (window as any).activePassToken = uniquePassToken;
-
-    // 🚀 Pass the token inside Whop's official query metadata routing fields
+    // شحن الرابط بالـ pass_token والـ Metadata ليقرأها الـ Webhook الخاص بـ Whop
     const checkoutUrl = `${baseCheckoutUrl}?pass_token=${uniquePassToken}&metadata[pass_token]=${uniquePassToken}`;
 
-    // Open Whop securely in a clean secondary tab, keeping your main parsing session completely alive
+    // فتح الدفع في نافذة جديدة، والـ Whop سيعيد توجيه الصفحة الأصلية ميكانيكياً
     window.open(checkoutUrl, '_blank');
   };
 
