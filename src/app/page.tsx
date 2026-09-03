@@ -4,7 +4,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import Footer from './components/Footer';
 import { supabase } from './lib/supabaseClient';
 
-
 interface Transaction {
   id: number;
   date: string;
@@ -211,6 +210,7 @@ function getPrice(pageCount: number): { price: number; label: string; tier: stri
   return { price: 85, label: 'Enterprise', tier: '51+ pages', badge: '🏢' };
 }
 export const dynamic = 'force-dynamic';
+
 // ============ MAIN COMPONENT ============
 export default function Home() {
   const [parsedData, setParsedData] = useState<Transaction[]>([]);
@@ -229,7 +229,6 @@ export default function Home() {
     ofx: true,
     qbo: true,
   });
-  const [pendingDownload, setPendingDownload] = useState<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -241,67 +240,61 @@ export default function Home() {
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
 
-  // Reads whatever the customer actually selected before checkout and releases
-  // ALL of those formats — not just a hardcoded CSV — then cleans up storage.
-  const releasePendingFiles = () => {
-    const rawPending = localStorage.getItem('pendingDownload');
-    if (!rawPending) return;
-    try {
-      const pendingData = JSON.parse(rawPending);
-      const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
-      downloadAllFormats(pendingData.rows, baseName, pendingData.formats || ['csv'], pendingData.bank || '');
-      alert('🎉 Success! Payment verified via server webhook. Your files are downloading now.');
-      localStorage.removeItem('pendingDownload');
-      localStorage.removeItem('activePassToken');
-    } catch (err) {
-      console.error('Realtime file release error:', err);
-    }
-  };
-
-    // 📡 THE UN-KILLABLE RELOAD-PROOF FILE RELEASER (SELLIX EDITION)
+  // ============================================================
+  // 🔥 WHOP STORAGE EVENT LISTENER – triggers download in original tab
+  // ============================================================
   useEffect(() => {
-    // فحص الرابط: إذا رجعنا من Sellix والـ URL يحتوي على إشارة النجاح
-    const urlParams = new URLSearchParams(window.location.search);
-    const isVerified = urlParams.get('payment_verified') === 'true';
-    const rawPending = localStorage.getItem('pendingDownload');
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'whop_payment_complete' && e.newValue === 'true') {
+        const raw = localStorage.getItem('pendingDownload');
+        if (!raw) return;
 
-    if (isVerified && rawPending) {
-      try {
-        const pendingData = JSON.parse(rawPending);
-        const { rows, fileName } = pendingData;
-
-        if (rows && rows.length) {
-          const baseName = fileName.replace(/\.[^/.]+$/, '');
-          const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
-          const csvContent = [
-            headers.join(','), 
-            ...rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
-          ].join('\n');
-          
-          // ⚡ قذف وتحميل الـ CSV فوراً وبدون أي نقرات! [pdf_XZdc6j.pdf]
-          const blob = new Blob([csvContent], { type: 'text/csv' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = baseName + '.csv';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-
-          alert('🎉 Success! Payment Verified via Sellix. Your file has been downloaded.');
-          
-          // تنظيف الـ الذاكرة لحماية الخصوصية وتأمين السيستم [pdf_XZdc6j.pdf]
-          localStorage.removeItem('pendingDownload');
-          // تنظيف الرابط وإرجاعه نظيفاً بدون Query Params
-          window.history.replaceState({}, document.title, "/");
+        try {
+          const pending = JSON.parse(raw);
+          const { rows, fileName: fname, formats, bank } = pending;
+          if (rows && rows.length) {
+            const baseName = fname.replace(/\.[^/.]+$/, '');
+            downloadAllFormats(rows, baseName, formats, bank);
+            alert('🎉 Payment verified! Your files have been downloaded.');
+            localStorage.removeItem('pendingDownload');
+            localStorage.removeItem('whop_payment_complete');
+          }
+        } catch (err) {
+          console.error('Download error:', err);
         }
-      } catch (err) {
-        console.error('File release engine fault:', err);
       }
-    }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
+  // ============================================================
+  // 🔥 RELOAD SAFETY – if user refreshes original tab after payment
+  // ============================================================
+  useEffect(() => {
+    const checkPending = () => {
+      if (localStorage.getItem('whop_payment_complete') === 'true') {
+        const raw = localStorage.getItem('pendingDownload');
+        if (raw) {
+          try {
+            const pending = JSON.parse(raw);
+            const { rows, fileName: fname, formats, bank } = pending;
+            if (rows && rows.length) {
+              const baseName = fname.replace(/\.[^/.]+$/, '');
+              downloadAllFormats(rows, baseName, formats, bank);
+              alert('🎉 Payment verified! Your files have been downloaded.');
+              localStorage.removeItem('pendingDownload');
+              localStorage.removeItem('whop_payment_complete');
+            }
+          } catch (err) {
+            console.error('Reload download error:', err);
+          }
+        }
+      }
+    };
+    checkPending();
+  }, []);
 
   // ============ FILE UPLOAD ============
   const handleFileUpload = async (file: File) => {
@@ -319,7 +312,7 @@ export default function Home() {
 
     try {
       const formData = new FormData();
-      formData.append('file', file); // Streams pristine digital text layer signatures to backend safely
+      formData.append('file', file);
 
       const res = await fetch('/api/v1/parse', {
         method: 'POST',
@@ -348,9 +341,6 @@ export default function Home() {
           else totalCredits += cleanedAmt;
         });
 
-        // Inform the customer exactly which performance cluster processed their file ledger
-        const engineLabel = data.engine_used || 'SwiftLedger Hyper-Speed Core';
-
         setStats({
           fileName: file.name,
           pageCount: data.page_count || 1,
@@ -365,7 +355,7 @@ export default function Home() {
           firstDate: rows[0]?.date || '—',
           lastDate: lastRow?.date || '—',
           processing_time_ms: data.processing_time_ms || 0,
-          engineUsedLabel: engineLabel
+          engineUsedLabel: data.engine_used || 'SwiftLedger Hyper-Speed Core'
         });
 
         setShowStats(true);
@@ -425,12 +415,14 @@ export default function Home() {
     setShowStats(true);
   };
 
-  // ============ WHOP PAYMENT URLS ============
+  // ============================================================
+  // 🔥 WHOP CHECKOUT URLS – REPLACE WITH YOUR REAL PRODUCT LINKS
+  // ============================================================
   const whopUrls: Record<string, string> = {
-    '5': 'https://whop.com',
-    '25': 'https://whop.com',
-    '45': 'https://whop.com',
-    '85': 'https://whop.com',
+    '5': 'https://whop.com/checkout/your-product-5',      // <- change me
+    '25': 'https://whop.com/checkout/your-product-25',    // <- change me
+    '45': 'https://whop.com/checkout/your-product-45',    // <- change me
+    '85': 'https://whop.com/checkout/your-product-85',    // <- change me
   };
 
   const handlePayAndDownload = async () => {
@@ -442,36 +434,24 @@ export default function Home() {
       return;
     }
 
-    // إرجاع الـ whopUrls الأصلية لتأمين بوابة Whop لايف
-    const baseCheckoutUrl = whopUrls[stats.price.toString()];
-    if (!baseCheckoutUrl) {
+    const checkoutUrl = whopUrls[stats.price.toString()];
+    if (!checkoutUrl) {
       alert(`No Whop checkout link found for price $${stats.price}.`);
       return;
     }
 
-    // 💡 THE FINTECH CHEAT CODE: تحويل أرقام الأسطر والـ metadata لـ Base64 Payload وحقنها في الرابط!
-    const payloadData = {
-      txCount: parsedData.length,
-      file: fileName || 'statement',
-      balance: stats.netBalance
+    // Store all data needed for the download
+    const pendingData = {
+      rows: parsedData,
+      fileName: fileName || 'statement',
+      formats,
+      bank: selectedBank,
     };
-    const b64Payload = btoa(JSON.stringify(payloadData));
+    localStorage.setItem('pendingDownload', JSON.stringify(pendingData));
+    localStorage.removeItem('whop_payment_complete');
 
-    // شحن رابط Whop بالـ pass_token والـ Payload عابر للقارات والنوافذ المعزولة!
-    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}&payload=${b64Payload}`;
-
-    console.log('🚀 INITIALIZING SAFE ENCRYPTED PAYLOAD CHECKOUT ON WHOP...');
-    window.open(checkoutUrl, '_blank'); // يفتح في نافذة جديدة عادي والـ Whop يرجع الداتا كاملة
-  };
-
-  const handleDownloadAfterPayment = () => {
-    if (!pendingDownload) return;
-
-    const { rows, fileName, formats, bank } = pendingDownload;
-    downloadAllFormats(rows, fileName, formats, bank);
-
-    sessionStorage.removeItem('pendingDownload');
-    setPendingDownload(null);
+    // Open Whop in a new tab
+    window.open(checkoutUrl, '_blank');
   };
 
   const toggleFormat = (format: string) => {
@@ -610,24 +590,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Pending Download Notification */}
-      {pendingDownload && (
-        <div className="w-full max-w-4xl mx-auto z-10 mt-4">
-          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-emerald-400 font-medium">✅ Payment detected!</p>
-              <p className="text-slate-400 text-sm">Your files are ready to download.</p>
-            </div>
-            <button
-              onClick={handleDownloadAfterPayment}
-              className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold rounded-xl text-sm shadow-[0_0_30px_rgba(16,185,129,0.15)] transition-all duration-300"
-            >
-              📥 Download {pendingDownload.formats?.length || 0} Formats
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Stats Card */}
       {showStats && stats && parsedData.length > 0 && !loading && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-6">
@@ -757,7 +719,6 @@ export default function Home() {
                       <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
                     </tr>
                   ))}
-
 
                   {parsedData.slice(5, 7).map((row) => (
                     <tr key={row.id} className="select-none blur-[3px] opacity-25 pointer-events-none">
