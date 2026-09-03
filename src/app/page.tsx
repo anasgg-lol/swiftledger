@@ -379,9 +379,8 @@ export default function Home() {
     }
 
     const baseCheckoutUrl = whopUrls[stats.price.toString()];
-
-    const checkoutUrl = `${baseCheckoutUrl}?unique=${Date.now()}`;
-
+// نزيدو الـ Timestamp مع الـ Random Token لفرض فاتورة مستقلة ومجردة في كل رفعة ملف! [pdf_XZdc6j.pdf]
+    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}`;
     if (!checkoutUrl) {
       alert(`No checkout URL found for price $${stats.price}. Please contact support.`);
       return;
