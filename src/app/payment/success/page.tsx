@@ -1,15 +1,16 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 function PaymentSuccessContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const [downloadTriggered, setDownloadTriggered] = useState(false);
+  const [fileNameOnly, setFileNameNameOnly] = useState('');
 
   useEffect(() => {
-    // 📡 INTERCEPT SIGNAL WRAPPERS: Reads the live query params passed back by Whop cloud nodes
+    // 📡 INTERCEPT SIGNAL WRAPPERS: لقط الإشارة القادمة من Whop لايف
     const isVerified = searchParams.get('payment_verified') === 'true';
     const rawPending = sessionStorage.getItem('pendingDownload');
 
@@ -20,6 +21,7 @@ function PaymentSuccessContent() {
 
         if (rows && rows.length) {
           const baseName = fileName.replace(/\.[^/.]+$/, '');
+          setFileNameNameOnly(fileName);
           const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
           
           // Reconstruct the spreadsheet matrix inside browser memory blocks in 0.01 seconds
@@ -41,34 +43,43 @@ function PaymentSuccessContent() {
           
           setDownloadTriggered(true);
           
-          // Wipe data traces immediately to protect your server computing limits and secure the system
-          sessionStorage.removeItem('pendingDownload');
+          // نترك البيانات في الـ Session لكي لا تضيع إذا المستخدم عمل Refresh خطأ
         }
       } catch (err) {
         console.error('Auto download execution mismatch:', err);
       }
     }
-
-    // Gracefully route your paying client clean back to their main dashboard screen view loop after 3 seconds
-    const timer = setTimeout(() => {
-      router.push('/');
-    }, 3000);
-
-    return () => clearTimeout(timer);
-  }, [searchParams, router, downloadTriggered]);
+  }, [searchParams, downloadTriggered]);
 
   return (
     <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6 text-center">
-      <div className="max-w-md">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center animate-bounce">
+      <div className="max-w-md bg-slate-950/50 border border-slate-800/80 p-8 rounded-3xl backdrop-blur-md shadow-2xl">
+        <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
           <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
             <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-white">✅ Payment Secured!</h1>
-        <p className="text-slate-400 mt-2 text-sm">
-          Your highly optimized file has been compiled and downloaded to your device automatically.
+        <h1 className="text-2xl font-bold text-white tracking-tight">🎉 Total Parsing Victory!</h1>
+        <p className="text-slate-400 mt-2 text-sm leading-relaxed">
+          Your highly optimized transaction ledger has been compiled and downloaded securely to your computer.
         </p>
+
+        {fileNameOnly && (
+          <div className="mt-4 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+            <p className="text-[11px] text-emerald-400 font-mono tracking-tight truncate">📄 {fileNameOnly}</p>
+          </div>
+        )}
+
+        {/* ✅ THE ENTERPRISE FIX: نلغي الـ Auto-redirect الأوتوماتيكي البايخ ونعطيه زرار يرجع بيه وقت ما يحب */}
+        <div className="mt-6 border-t border-slate-800/60 pt-5">
+          <Link 
+            href="/"
+            onClick={() => sessionStorage.removeItem('pendingDownload')} // تنظيف عند العودة الطوعية
+            className="inline-flex items-center justify-center px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold rounded-xl text-xs shadow-lg transition-all duration-200"
+          >
+            ← Back to Dashboard Terminal
+          </Link>
+        </div>
       </div>
     </main>
   );
