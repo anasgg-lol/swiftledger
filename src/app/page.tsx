@@ -239,18 +239,17 @@ export default function Home() {
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
   useEffect(() => {
-    const handleCrossTabStorageSignal = (e: StorageEvent) => {
-      // Intercepts the payment verified broadcast token instantly across browser tab windows!
-      if (e.key === 'whop_payment_success_signal' && e.newValue === 'true') {
-        console.log('⚡ CROSS-TAB SIGNAL LOCKED: PAYMENT RECEIVED. RELEASING DOWNLOAD CHAINS...');
+    // 📡 فتح رادار الاستقبال اللاسلكي بين التابات
+    const channel = new BroadcastChannel('swiftledger_payment_channel');
+    
+    channel.onmessage = (event) => {
+      if (event.data?.status === 'RELEASE_FILES_NOW') {
+        console.log('🚀 INSTANT SIGNAL DETECTED! RELEASING FILES DIRECTLY...');
         
-        // Retrieve our safely preserved local dataset array rows natively
         const rawPending = sessionStorage.getItem('pendingDownload');
         if (rawPending) {
           try {
             const pendingData = JSON.parse(rawPending);
-            
-            // Invoke your standard native browser multi-format download engine block right here
             const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
             const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
             const csvContent = [headers.join(','), ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
@@ -265,21 +264,16 @@ export default function Home() {
             document.body.removeChild(link);
             URL.revokeObjectURL(downloadUrl);
 
-            // Turn on your state animations or toast success alerts live on the dashboard UI!
-            alert('🎉 Payment Secure! Your multi-format statement download has been triggered automatically.');
-            
-            // Wipe out token footprints to prevent loop duplication traps
             sessionStorage.removeItem('pendingDownload');
             localStorage.removeItem('whop_payment_success_signal');
           } catch (err) {
-            console.error('Cross-tab compilation mismatch:', err);
+            console.error('Download extraction error:', err);
           }
         }
       }
     };
 
-    window.addEventListener('storage', handleCrossTabStorageSignal);
-    return () => window.removeEventListener('storage', handleCrossTabStorageSignal);
+    return () => channel.close();
   }, [parsedData, fileName]);
   // ============ FILE UPLOAD ============
   const handleFileUpload = async (file: File) => {
