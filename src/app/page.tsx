@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Footer from './components/Footer';
-
+import { supabase } from './lib/supabaseClient';
 interface Transaction {
   id: number;
   date: string;
@@ -257,68 +257,58 @@ export default function Home() {
   };
 
   useEffect(() => {
-    let globalChannel: any = null;
+    console.log('📡 RADAR STATUS DETECTOR: SCANNING SECURE REALTIME WEBSOCKET INFRASTRUCTURE...');
 
-    import('@/app/lib/supabaseClient').then(({ supabase }) => {
-      console.log('📡 RADAR STATUS DETECTOR: SCANNING SECURE REALTIME WEBSOCKET INFRASTRUCTURE...');
+    // ✅ FIXED: الاستدعاء المباشر يفتح الـ Websocket في ميكرو-ثانية بدون أي انتظار
+    const channel = supabase
+      .channel('realtime-ledger-sync')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ledger_orders' },
+        (payload: any) => {
+          const updatedOrderId = payload?.new?.order_id;
+          const currentSessionTrackingToken = (window as any).activeTrackingOrderId;
 
-      globalChannel = supabase
-        .channel('realtime-ledger-sync')
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'ledger_orders' },
-          (payload: any) => {
-            const updatedOrderId = payload?.new?.order_id;
-            const currentSessionTrackingToken = (window as any).activeTrackingOrderId;
+          if (updatedOrderId && updatedOrderId === currentSessionTrackingToken && payload?.new?.payment_status === 'completed') {
+            console.log('⚡ SERVER-SIDE WHOP WEBHOOK SIGNAL REGISTERED LIVE OVER SOCKET! RELEASING FILES...');
 
-            // Isolate incoming streaming payloads and check if our specific order row swapped to 'completed'
-            if (updatedOrderId && updatedOrderId === currentSessionTrackingToken && payload?.new?.payment_status === 'completed') {
-              console.log('⚡ SERVER-SIDE WHOP WEBHOOK SIGNAL REGISTERED LIVE OVER SOCKET! RELEASING FILES...');
+            const rawPending = sessionStorage.getItem('pendingDownload');
+            if (rawPending) {
+              try {
+                const pendingData = JSON.parse(rawPending);
+                const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
+                const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
+                
+                const csvContent = [
+                  headers.join(','), 
+                  ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+                ].join('\n');
+                
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const downloadUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = baseName + '.csv';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(downloadUrl);
 
-              const rawPending = sessionStorage.getItem('pendingDownload');
-              if (rawPending) {
-                try {
-                  const pendingData = JSON.parse(rawPending);
-                  const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
-                  const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
-                  
-                  const csvContent = [
-                    headers.join(','), 
-                    ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
-                  ].join('\n');
-                  
-                  // ⚡ INSTANTANEOUS CSV BLOB INJECTOR DOWN TO TRADING harddrive
-                  const blob = new Blob([csvContent], { type: 'text/csv' });
-                  const downloadUrl = URL.createObjectURL(blob);
-                  const link = document.createElement('a');
-                  link.href = downloadUrl;
-                  link.download = baseName + '.csv';
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                  URL.revokeObjectURL(downloadUrl);
-
-                  alert('🎉 Transaction Authenticated Server-Side! Your transaction sheets have been exported.');
-                  
-                  // Complete cleanup of variables to freeze memory leak footprint trails
-                  sessionStorage.removeItem('pendingDownload');
-                  (window as any).activeTrackingOrderId = null;
-                } catch (err) {
-                  console.error('File generation engine runtime block:', err);
-                }
+                alert('🎉 Transaction Authenticated Server-Side! Your transaction sheets have been exported.');
+                
+                sessionStorage.removeItem('pendingDownload');
+                (window as any).activeTrackingOrderId = null;
+              } catch (err) {
+                console.error('File generation engine runtime block:', err);
               }
             }
           }
-        )
-        .subscribe();
-    });
+        }
+      )
+      .subscribe();
 
     return () => {
-      if (globalChannel) {
-        import('@/app/lib/supabaseClient').then(({ supabase }) => {
-          supabase.removeChannel(globalChannel);
-        });
-      }
+      supabase.removeChannel(channel);
     };
   }, [parsedData, fileName]);
 
@@ -467,7 +457,6 @@ export default function Home() {
       return;
     }
 
-    // Initialize your secure locally-available state mapping arrays
     sessionStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
       fileName: fileName || 'statement',
@@ -476,9 +465,9 @@ export default function Home() {
     }));
 
     try {
-      // 💡 THE UPGRADE: Dynamically connect and write an immutable pending order row into Supabase first!
-      const { supabase } = await import('@/app/lib/supabaseClient');
+      console.log('📝 CONNECTING SECURELY TO LEDGER ORDERS...');
       
+      // ✅ FIXED: حذفنا الـ await import البطيء واستعملنا الـ Client المباشر الخفيف
       const { data: newOrder, error } = await supabase
         .from('ledger_orders')
         .insert({
@@ -492,16 +481,15 @@ export default function Home() {
       if (error || !newOrder) throw new Error(error?.message || 'Database ledger row generation failed.');
 
       const activeOrderId = newOrder.order_id;
-      (window as any).activeTrackingOrderId = activeOrderId; // Map to memory slots for realtime query isolating loops
+      (window as any).activeTrackingOrderId = activeOrderId; 
 
-      console.log(`📝 IMMUTABLE PENDING ORDER SECCURED: [${activeOrderId}]. Redirecting to secure billing portal...`);
+      console.log(`📝 IMMUTABLE PENDING ORDER SECURED: [${activeOrderId}]. Redirecting...`);
 
-      // 🚀 Pass the order_id clean through both query string fields and Whop custom metadata vectors
       const checkoutUrl = `${baseCheckoutUrl}?order_id=${activeOrderId}&metadata[order_id]=${activeOrderId}`;
       window.open(checkoutUrl, '_blank');
 
     } catch (dbErr: any) {
-      console.error('❌ Failed to establish server-side transaction anchor lines:', dbErr);
+      console.error('❌ Database operational fault intercepted:', dbErr);
       alert('Database connection timeout. Restoring secure operational routing gates...');
     }
   };
