@@ -28,7 +28,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `No product found for $${price}` }, { status: 400 });
     }
 
-    // 🔥 Simple: just create a checkout link from the product
     const requestBody = {
       product_id: productId,
       redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
@@ -54,11 +53,25 @@ export async function POST(req: Request) {
 
     if (!response.ok) {
       console.error('❌ Whop API error response:', data);
-      // Ensure error is a string
+
+      // ✅ Extract the error message cleanly
       let errorMsg = 'Checkout creation failed';
-      if (data.message) errorMsg = data.message;
-      else if (data.error) errorMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
-      else errorMsg = JSON.stringify(data);
+      if (data.message) {
+        errorMsg = data.message;
+      } else if (data.error) {
+        // If error is an object, try to get its message, else stringify
+        if (typeof data.error === 'string') {
+          errorMsg = data.error;
+        } else if (data.error.message) {
+          errorMsg = data.error.message;
+        } else {
+          errorMsg = JSON.stringify(data.error);
+        }
+      } else {
+        // Fallback: return the entire data as a string
+        errorMsg = JSON.stringify(data);
+      }
+
       return NextResponse.json({ error: errorMsg }, { status: response.status });
     }
 
