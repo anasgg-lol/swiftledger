@@ -430,7 +430,7 @@ export default function Home() {
       bank: selectedBank,
     }));
     const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    window.open(checkoutUrl, '_blank');
+    window.location.href = checkoutUrl;
     alert('🛒 Opening Whop checkout in a new tab. Complete payment there, then come back and click "Download" to get your CSV.');
   };
 

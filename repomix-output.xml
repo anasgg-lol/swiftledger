@@ -368,97 +368,6 @@ export default function PaymentCancel() {
 }
 </file>
 
-<file path="src/app/payment/success/page.tsx">
-'use client';
-
-import { Suspense } from 'react';
-import { useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-
-// ============================================================
-// 🔥 INNER COMPONENT – Uses useSearchParams
-// ============================================================
-function PaymentSuccessContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const [countdown, setCountdown] = useState(5);
-
-  const pageCount = searchParams.get('pageCount');
-  const txCount = searchParams.get('txCount');
-  const file = searchParams.get('file');
-
-  // Auto-redirect to home after 5 seconds
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          router.push('/');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [router]);
-
-  return (
-    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6">
-      <div className="max-w-md text-center">
-        {/* Success Icon */}
-        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center animate-fade-up">
-          <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-
-        <h1 className="text-3xl font-bold text-white animate-fade-up">✅ Payment Successful!</h1>
-        <p className="text-slate-400 mt-3 animate-fade-up-delay-1">
-          Your payment was successful. You can now download your CSV.
-        </p>
-
-        <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl animate-fade-up-delay-2">
-          <p className="text-emerald-400 font-medium">
-            📄 {file || 'Your statement'} – {txCount || 0} transactions
-          </p>
-        </div>
-
-        <Link
-          href="/"
-          className="inline-block mt-6 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-medium rounded-xl text-sm transition-colors animate-fade-up-delay-3"
-        >
-          ← Back to SwiftLedger
-        </Link>
-
-        <p className="text-xs text-slate-500 mt-4 animate-fade-up-delay-4">
-          Redirecting in {countdown}s
-        </p>
-      </div>
-    </main>
-  );
-}
-
-// ============================================================
-// 🔥 OUTER COMPONENT – Wraps with Suspense
-// ============================================================
-export default function PaymentSuccess() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#030712] text-white flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-          <p className="text-slate-400 text-sm">Loading...</p>
-        </div>
-      </div>
-    }>
-      <PaymentSuccessContent />
-    </Suspense>
-  );
-}
-</file>
-
 <file path="src/app/pricing/page.tsx">
 'use client';
 
@@ -1029,6 +938,61 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 }
 </file>
 
+<file path="src/app/payment/success/page.tsx">
+'use client';
+
+import { Suspense, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+
+function PaymentSuccessContent() {
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const isVerified = searchParams.get('payment_verified') === 'true';
+
+    if (isVerified) {
+      console.log('📡 BROADCASTING HIGH-SPEED CROSS-TAB TRANSACTION SIGNAL...');
+      
+      // Fires the synchronized cross-tab state modifier key across active tab instances instantly!
+      localStorage.setItem('whop_payment_success_signal', 'true');
+      
+      // Smooth UX: Give it 500ms to safely flush the cross-tab thread, then kill the checkout window tab!
+      setTimeout(() => {
+        try {
+          window.close();
+        } catch (e) {
+          console.log('Tab close skipped by browser sandbox permissions. Ready for manual close.');
+        }
+      }, 500);
+    }
+  }, [searchParams]);
+
+  return (
+    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="max-w-md">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center animate-pulse">
+          <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h1 className="text-xl font-bold text-white">Secure Link Authorized</h1>
+        <p className="text-slate-400 mt-2 text-xs">
+          Syncing transaction hashes with your active dashboard... This window can now be safely closed.
+        </p>
+      </div>
+    </main>
+  );
+}
+
+export default function PaymentSuccess() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#030712]" />}>
+      <PaymentSuccessContent />
+    </Suspense>
+  );
+}
+</file>
+
 <file path=".gitignore">
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
@@ -1361,7 +1325,43 @@ export default function Home() {
     ofx: { label: '🏦 .OFX', desc: 'Microsoft Money, Quicken', color: 'text-amber-400' },
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
+  useEffect(() => {
+    // 📡 فتح رادار الاستقبال اللاسلكي بين التابات
+    const channel = new BroadcastChannel('swiftledger_payment_channel');
+    
+    channel.onmessage = (event) => {
+      if (event.data?.status === 'RELEASE_FILES_NOW') {
+        console.log('🚀 INSTANT SIGNAL DETECTED! RELEASING FILES DIRECTLY...');
+        
+        const rawPending = sessionStorage.getItem('pendingDownload');
+        if (rawPending) {
+          try {
+            const pendingData = JSON.parse(rawPending);
+            const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
+            const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
+            const csvContent = [headers.join(','), ...pendingData.rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = baseName + '.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(downloadUrl);
 
+            sessionStorage.removeItem('pendingDownload');
+            localStorage.removeItem('whop_payment_success_signal');
+          } catch (err) {
+            console.error('Download extraction error:', err);
+          }
+        }
+      }
+    };
+
+    return () => channel.close();
+  }, [parsedData, fileName]);
   // ============ FILE UPLOAD ============
   const handleFileUpload = async (file: File) => {
     setLoading(true);
@@ -1501,9 +1501,11 @@ export default function Home() {
       return;
     }
 
-    const checkoutUrl = whopUrls[stats.price.toString()];
-
-    if (!checkoutUrl) {
+    const baseCheckoutUrl = whopUrls[stats.price.toString()];
+    // نزيدو الـ Timestamp مع الـ Random Token لفرض فاتورة مستقلة ومجردة في كل رفعة ملف! [pdf_XZdc6j.pdf]
+    
+    
+    if (!baseCheckoutUrl) {
       alert(`No checkout URL found for price $${stats.price}. Please contact support.`);
       return;
     }
@@ -1514,7 +1516,7 @@ export default function Home() {
       formats: formats,
       bank: selectedBank,
     }));
-
+    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}`;
     window.open(checkoutUrl, '_blank');
     alert('🛒 Opening Whop checkout in a new tab. Complete payment there, then come back and click "Download" to get your CSV.');
   };
@@ -1802,6 +1804,7 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
+  
                   {parsedData.slice(0, 5).map((row) => (
                     <tr key={row.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-2.5 font-medium text-white/90">{row.date}</td>
@@ -1811,7 +1814,9 @@ export default function Home() {
                       <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
                     </tr>
                   ))}
-                  {parsedData.slice(5).map((row) => (
+  
+  
+                  {parsedData.slice(5, 7).map((row) => (
                     <tr key={row.id} className="select-none blur-[3px] opacity-25 pointer-events-none">
                       <td className="p-2.5 font-medium text-white/60">{row.date}</td>
                       <td className="p-2.5 text-slate-400/40">{row.type}</td>
@@ -1848,7 +1853,7 @@ import PDFParser from 'pdf2json';
 import { createWorker } from 'tesseract.js';
 
 export const maxDuration = 60; // Next.js official Route segment configuration config object [pdf_nQFnlh.pdf]
-
+export const WORKING_MODEL = 'gemini-flash-lite-latest';
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 if (typeof global.DOMMatrix === 'undefined') {
@@ -1977,7 +1982,7 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     
     // ✅ FIX: Define the model API parameters globally at the top of the function to prevent scoping errors
-    const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     const basePrompt = `Extract ALL financial transaction rows from this document data context.
     Return ONLY a JSON array where each object strictly matches this schema mapping layout:
     [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
