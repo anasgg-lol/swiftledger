@@ -378,7 +378,9 @@ export default function Home() {
       return;
     }
 
-    const checkoutUrl = whopUrls[stats.price.toString()];
+    const baseCheckoutUrl = whopUrls[stats.price.toString()];
+
+    const checkoutUrl = `${baseCheckoutUrl}?unique=${Date.now()}`;
 
     if (!checkoutUrl) {
       alert(`No checkout URL found for price $${stats.price}. Please contact support.`);
