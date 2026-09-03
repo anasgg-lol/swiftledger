@@ -5,10 +5,7 @@ import Link from 'next/link';
 
 export default function PaymentSuccess() {
   useEffect(() => {
-    // Signal the original tab that payment succeeded
     localStorage.setItem('whop_payment_complete', 'true');
-
-    // Close this tab after 4 seconds
     setTimeout(() => {
       window.close();
     }, 4000);

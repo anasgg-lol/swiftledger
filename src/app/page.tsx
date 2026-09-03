@@ -416,7 +416,7 @@ export default function Home() {
   };
 
   // ============================================================
-  // 🔥 NEW: DYNAMIC CHECKOUT – calls our API to create a fresh session
+  // 🔥 UPDATED – calls our API to create a fresh checkout session
   // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
@@ -449,7 +449,9 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok || !data.url) {
-        throw new Error(data.error || 'Failed to create checkout session');
+        // Show the detailed error from the server
+        const errorMsg = data.error || data.details?.message || 'Checkout creation failed';
+        throw new Error(errorMsg);
       }
 
       // Open the fresh Whop checkout in a new tab

@@ -16,6 +16,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
     }
 
+    // Map price to Product ID
     const productIdMap: Record<number, string> = {
       5: process.env.WHOP_PRODUCT_ID_STARTER || '',
       25: process.env.WHOP_PRODUCT_ID_BUSINESS || '',
@@ -28,29 +29,42 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `No product found for $${price}` }, { status: 400 });
     }
 
-    // Use Whop's REST API directly – no SDK issues
+    // 🎯 Build the request body – use plan with product_id and the price in cents
+    const requestBody = {
+      plan: {
+        product_id: productId,
+        price: price * 100, // $5 → 500 cents
+        interval: 'one_time',
+        currency: 'usd',
+      },
+      redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
+      metadata: {
+        fileName: fileName || 'statement',
+        formats: (formats || []).join(','),
+        bank: bank || '',
+      },
+    };
+
+    console.log('🚀 Sending to Whop:', JSON.stringify(requestBody, null, 2));
+
     const response = await fetch('https://api.whop.com/api/v2/checkout_configurations', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${whopSecret}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        product_id: productId,
-        redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
-        metadata: {
-          fileName: fileName || 'statement',
-          formats: (formats || []).join(','),
-          bank: bank || '',
-        },
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Whop API error:', data);
-      return NextResponse.json({ error: data.message || 'Checkout creation failed' }, { status: response.status });
+      console.error('❌ Whop API error response:', data);
+      // Return the actual error to the frontend so we can see it
+      return NextResponse.json(
+        { error: data.message || data.error || 'Checkout creation failed', details: data },
+        { status: response.status }
+      );
     }
 
     // The checkout URL is `https://whop.com/checkout/` + the checkout ID
@@ -58,7 +72,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: checkoutUrl });
   } catch (error: any) {
-    console.error('Whop checkout creation error:', error);
-    return NextResponse.json({ error: error.message || 'Checkout creation failed' }, { status: 500 });
+    console.error('🔥 Whop checkout creation error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
