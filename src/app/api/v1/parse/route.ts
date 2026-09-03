@@ -4,7 +4,7 @@ import PDFParser from 'pdf2json';
 import { createWorker } from 'tesseract.js';
 
 export const maxDuration = 60; // Next.js official Route segment configuration config object [pdf_nQFnlh.pdf]
-
+export const WORKING_MODEL = 'gemini-flash-lite-latest';
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 if (typeof global.DOMMatrix === 'undefined') {
@@ -133,7 +133,7 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     
     // ✅ FIX: Define the model API parameters globally at the top of the function to prevent scoping errors
-    const url = `https://googleapis.com{WORKING_MODEL}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     const basePrompt = `Extract ALL financial transaction rows from this document data context.
     Return ONLY a JSON array where each object strictly matches this schema mapping layout:
     [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
