@@ -16,7 +16,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
     }
 
-    // Map price to Product ID
     const productIdMap: Record<number, string> = {
       5: process.env.WHOP_PRODUCT_ID_STARTER || '',
       25: process.env.WHOP_PRODUCT_ID_BUSINESS || '',
@@ -29,11 +28,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `No product found for $${price}` }, { status: 400 });
     }
 
-    // 🎯 Build the request body – use plan with product_id and the price in cents
     const requestBody = {
       plan: {
         product_id: productId,
-        price: price * 100, // $5 → 500 cents
+        price: price * 100,
         interval: 'one_time',
         currency: 'usd',
       },
@@ -60,16 +58,15 @@ export async function POST(req: Request) {
 
     if (!response.ok) {
       console.error('❌ Whop API error response:', data);
-      // Return the actual error to the frontend so we can see it
+      // Return a clean error message
+      const errorMessage = data.message || data.error || 'Checkout creation failed';
       return NextResponse.json(
-        { error: data.message || data.error || 'Checkout creation failed', details: data },
+        { error: errorMessage },
         { status: response.status }
       );
     }
 
-    // The checkout URL is `https://whop.com/checkout/` + the checkout ID
     const checkoutUrl = `https://whop.com/checkout/${data.id}`;
-
     return NextResponse.json({ url: checkoutUrl });
   } catch (error: any) {
     console.error('🔥 Whop checkout creation error:', error);

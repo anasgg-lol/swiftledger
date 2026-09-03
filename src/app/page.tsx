@@ -422,14 +422,13 @@ export default function Home() {
     if (!stats) return;
 
     const formats = Object.keys(selectedFormats).filter((key) => selectedFormats[key]);
-    if (formats.length === 0) {
-      alert('Please select at least one format to export.');
-      return;
-    }
+      if (formats.length === 0) {
+        alert('Please select at least one format to export.');
+        return;
+      }
 
     const price = stats.price;
 
-    // Save pending data for the cross‑tab handshake
     const pendingData = {
       rows: parsedData,
       fileName: fileName || 'statement',
@@ -449,17 +448,15 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok || !data.url) {
-        // Show the detailed error from the server
-        const errorMsg = data.error || data.details?.message || 'Checkout creation failed';
+      // ✅ Extract the error message properly
+        const errorMsg = data.error || 'Checkout creation failed';
         throw new Error(errorMsg);
       }
 
-      // Open the fresh Whop checkout in a new tab
       window.open(data.url, '_blank');
     } catch (error: any) {
       console.error('Checkout creation error:', error);
       alert(`Error starting checkout: ${error.message}`);
-      // Clean up so we don't leave stale data
       localStorage.removeItem('pendingDownload');
     }
   };
