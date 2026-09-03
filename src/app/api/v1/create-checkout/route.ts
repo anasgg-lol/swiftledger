@@ -28,8 +28,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `No product found for $${price}` }, { status: 400 });
     }
 
-    // Attempt 1: checkout_links
-    const simpleBody = {
+    // 🔥 Simple: just create a checkout link from the product
+    const requestBody = {
       product_id: productId,
       redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
       metadata: {
@@ -39,65 +39,31 @@ export async function POST(req: Request) {
       },
     };
 
-    console.log('🚀 Attempt 1: POST /v2/checkout_links', JSON.stringify(simpleBody, null, 2));
+    console.log('🚀 Sending to Whop:', JSON.stringify(requestBody, null, 2));
 
-    let response = await fetch('https://api.whop.com/api/v2/checkout_links', {
+    const response = await fetch('https://api.whop.com/api/v2/checkout_links', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${whopSecret}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(simpleBody),
+      body: JSON.stringify(requestBody),
     });
 
-    let data = await response.json();
+    const data = await response.json();
 
-    if (response.ok) {
-      return NextResponse.json({ url: data.url });
+    if (!response.ok) {
+      console.error('❌ Whop API error response:', data);
+      // Ensure error is a string
+      let errorMsg = 'Checkout creation failed';
+      if (data.message) errorMsg = data.message;
+      else if (data.error) errorMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+      else errorMsg = JSON.stringify(data);
+      return NextResponse.json({ error: errorMsg }, { status: response.status });
     }
 
-    console.log('❌ Attempt 1 failed:', data);
-
-    // Attempt 2: checkout_configurations with plan
-    const planBody = {
-      plan: {
-        product_id: productId,
-        price: price * 100,
-        interval: 'one_time',
-        currency: 'usd',
-      },
-      redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
-      metadata: {
-        fileName: fileName || 'statement',
-        formats: (formats || []).join(','),
-        bank: bank || '',
-      },
-    };
-
-    console.log('🔄 Attempt 2: POST /v2/checkout_configurations', JSON.stringify(planBody, null, 2));
-
-    response = await fetch('https://api.whop.com/api/v2/checkout_configurations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${whopSecret}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(planBody),
-    });
-
-    data = await response.json();
-
-    if (response.ok) {
-      const checkoutUrl = `https://whop.com/checkout/${data.id}`;
-      return NextResponse.json({ url: checkoutUrl });
-    }
-
-    console.error('❌ Both attempts failed. Last error:', data);
-    const errorMessage = data.message || data.error || JSON.stringify(data);
-    return NextResponse.json(
-      { error: `Whop API error: ${errorMessage}` },
-      { status: response.status }
-    );
+    // data.url contains the checkout link
+    return NextResponse.json({ url: data.url });
   } catch (error: any) {
     console.error('🔥 Unhandled exception:', error);
     return NextResponse.json(
