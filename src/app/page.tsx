@@ -420,7 +420,7 @@ export default function Home() {
       return;
     }
 
-    // 💡 THE OVERHAUL: تخزين دائم ومضمون 100% للداتا في الـ localStorage لكسر عزل النوافذ الجديدة!
+    // شحن وحفظ احتياطي محلي كالعادة
     localStorage.setItem('pendingDownload', JSON.stringify({
       rows: parsedData,
       fileName: fileName || 'statement',
@@ -428,10 +428,18 @@ export default function Home() {
       bank: selectedBank,
     }));
 
-    // نزيدو الـ Dynamic token لكسر كاش العضويات الميتة في Whop
-    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    // 💡 THE FINTECH CHEAT CODE: تحويل أرقام الأسطر والـ metadata لـ Base64 Payload وحقنها في الرابط!
+    const payloadData = {
+      txCount: parsedData.length,
+      file: fileName || 'statement',
+      balance: stats.netBalance
+    };
+    const b64Payload = btoa(JSON.stringify(payloadData));
 
-    // نفتح الدفع في نفس الصفحة، والـ Whop يتكفل بالباقي
+    // شحن الرابط بالـ pass_token والـ Payload عابر للقارات والنوافذ المعزولة!
+    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}&payload=${b64Payload}`;
+
+    // فتح الدفع في نفس الصفحة، والـ Whop يتكفل بإرجاع الـ Dynamic string كامل
     window.location.href = checkoutUrl;
   };
 
