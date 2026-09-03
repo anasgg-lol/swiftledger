@@ -12,8 +12,7 @@ export async function POST(req: Request) {
 
     const whopSecret = process.env.WHOP_API_KEY;
     if (!whopSecret) {
-      console.error('WHOP_API_KEY not set');
-      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
+      return NextResponse.json({ error: 'Server misconfigured - missing API key' }, { status: 500 });
     }
 
     const productIdMap: Record<number, string> = {
@@ -28,6 +27,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `No product found for $${price}` }, { status: 400 });
     }
 
+    // Use checkout_configurations – this often requires different permissions
     const requestBody = {
       product_id: productId,
       redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
@@ -38,9 +38,7 @@ export async function POST(req: Request) {
       },
     };
 
-    console.log('🚀 Sending to Whop:', JSON.stringify(requestBody, null, 2));
-
-    const response = await fetch('https://api.whop.com/api/v2/checkout_links', {
+    const response = await fetch('https://api.whop.com/api/v2/checkout_configurations', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${whopSecret}`,
@@ -52,31 +50,16 @@ export async function POST(req: Request) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('❌ Whop API error response:', data);
-
-      // ✅ Extract the error message cleanly
       let errorMsg = 'Checkout creation failed';
-      if (data.message) {
-        errorMsg = data.message;
-      } else if (data.error) {
-        // If error is an object, try to get its message, else stringify
-        if (typeof data.error === 'string') {
-          errorMsg = data.error;
-        } else if (data.error.message) {
-          errorMsg = data.error.message;
-        } else {
-          errorMsg = JSON.stringify(data.error);
-        }
-      } else {
-        // Fallback: return the entire data as a string
-        errorMsg = JSON.stringify(data);
-      }
-
+      if (data.message) errorMsg = data.message;
+      else if (data.error) errorMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+      else errorMsg = JSON.stringify(data);
       return NextResponse.json({ error: errorMsg }, { status: response.status });
     }
 
-    // data.url contains the checkout link
-    return NextResponse.json({ url: data.url });
+    // For checkout_configurations, the URL is: https://whop.com/checkout/{data.id}
+    const checkoutUrl = `https://whop.com/checkout/${data.id}`;
+    return NextResponse.json({ url: checkoutUrl });
   } catch (error: any) {
     console.error('🔥 Unhandled exception:', error);
     return NextResponse.json(
