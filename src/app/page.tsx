@@ -679,6 +679,7 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
+  
                   {parsedData.slice(0, 5).map((row) => (
                     <tr key={row.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-2.5 font-medium text-white/90">{row.date}</td>
@@ -688,7 +689,9 @@ export default function Home() {
                       <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
                     </tr>
                   ))}
-                  {parsedData.slice(5).map((row) => (
+  
+  
+                  {parsedData.slice(5, 7).map((row) => (
                     <tr key={row.id} className="select-none blur-[3px] opacity-25 pointer-events-none">
                       <td className="p-2.5 font-medium text-white/60">{row.date}</td>
                       <td className="p-2.5 text-slate-400/40">{row.type}</td>
