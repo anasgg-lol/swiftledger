@@ -419,10 +419,10 @@ export default function Home() {
   // 🔥 WHOP CHECKOUT URLS – REPLACE WITH YOUR REAL PRODUCT LINKS
   // ============================================================
   const whopUrls: Record<string, string> = {
-    '5': 'https://whop.com/checkout/your-product-5',      // <- change me
-    '25': 'https://whop.com/checkout/your-product-25',    // <- change me
-    '45': 'https://whop.com/checkout/your-product-45',    // <- change me
-    '85': 'https://whop.com/checkout/your-product-85',    // <- change me
+    '5': 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',      // <- change me
+    '25': 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',    // <- change me
+    '45': 'https://whop.com/vercel-3f41/swiftledger-corporate-21-50-pages/',    // <- change me
+    '85': 'https://whop.com/vercel-3f41/swiftledger-enterprise-51-pages/',    // <- change me
   };
 
   const handlePayAndDownload = async () => {
