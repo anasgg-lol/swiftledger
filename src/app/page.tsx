@@ -401,7 +401,7 @@ export default function Home() {
   };
 
   // ============================================================
-  // 🔥 PAYMENT HANDLER – calls the API and shows error details
+  // 🔥 PAYMENT HANDLER – DIRECT PRODUCT PAGE REDIRECT (NO API)
   // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
@@ -414,6 +414,7 @@ export default function Home() {
 
     const price = stats.price;
 
+    // Save pending data for the cross‑tab handshake
     const pendingData = {
       rows: parsedData,
       fileName: fileName || 'statement',
@@ -423,26 +424,23 @@ export default function Home() {
     localStorage.setItem('pendingDownload', JSON.stringify(pendingData));
     localStorage.removeItem('whop_payment_complete');
 
-    try {
-      const response = await fetch('/api/v1/create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ price, fileName, formats, bank: selectedBank }),
-      });
+    // 🎯 Direct product page URLs – using your product IDs
+    const productPageMap: Record<number, string> = {
+      5: 'https://whop.com/product/prod_E4LqwHMSpsAeA',
+      25: 'https://whop.com/product/prod_yW6DIDkhdrFLf',
+      45: 'https://whop.com/product/prod_IBoJWlU1a6NJC',
+      85: 'https://whop.com/product/prod_eHSxJk0SRhKJ8',
+    };
 
-      const data = await response.json();
-
-      if (!response.ok || !data.url) {
-        // data.error now contains the full error message from Whop
-        throw new Error(data.error || 'Checkout creation failed');
-      }
-
-      window.open(data.url, '_blank');
-    } catch (error: any) {
-      console.error('Checkout creation error:', error);
-      alert(`Error starting checkout: ${error.message}`);
+    const productUrl = productPageMap[price];
+    if (!productUrl) {
+      alert('Product page not found for this price.');
       localStorage.removeItem('pendingDownload');
+      return;
     }
+
+    // Open the product page in a new tab
+    window.open(productUrl, '_blank');
   };
 
   const toggleFormat = (format: string) => {
