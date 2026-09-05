@@ -401,7 +401,7 @@ export default function Home() {
   };
 
   // ============================================================
-  // 🔥 PAYMENT HANDLER – DIRECT PRODUCT PAGE REDIRECT (NO API)
+  // 🔥 PAYMENT HANDLER – DIRECT PRODUCT PAGE REDIRECT
   // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
@@ -424,22 +424,24 @@ export default function Home() {
     localStorage.setItem('pendingDownload', JSON.stringify(pendingData));
     localStorage.removeItem('whop_payment_complete');
 
-    // 🎯 Direct product page URLs – using your product IDs
-    const productPageMap: Record<number, string> = {
-      5: 'https://whop.com/product/prod_E4LqwHMSpsAeA',
-      25: 'https://whop.com/product/prod_yW6DIDkhdrFLf',
-      45: 'https://whop.com/product/prod_IBoJWlU1a6NJC',
-      85: 'https://whop.com/product/prod_eHSxJk0SRhKJ8',
+    // 🎯 Build product page URLs from your product IDs
+    // You can also override these with NEXT_PUBLIC_* env vars
+    const productIdMap: Record<number, string> = {
+      5: process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID_STARTER || 'prod_E4LqwHMSpsAeA',
+      25: process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID_BUSINESS || 'prod_yW6DIDkhdrFLf',
+      45: process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID_CORPORATE || 'prod_IBoJWlU1a6NJC',
+      85: process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID_ENTERPRISE || 'prod_eHSxJk0SRhKJ8',
     };
 
-    const productUrl = productPageMap[price];
-    if (!productUrl) {
-      alert('Product page not found for this price.');
+    const productId = productIdMap[price];
+    if (!productId) {
+      alert('Product ID not found for this price.');
       localStorage.removeItem('pendingDownload');
       return;
     }
 
-    // Open the product page in a new tab
+    const productUrl = `https://whop.com/product/${productId}`;
+    console.log('🔗 Opening product page:', productUrl);
     window.open(productUrl, '_blank');
   };
 
