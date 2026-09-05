@@ -401,7 +401,7 @@ export default function Home() {
   };
 
   // ============================================================
-  // 🔥 PAYMENT HANDLER – DIRECT PRODUCT PAGE REDIRECT
+  // 🔥 PAYMENT HANDLER – DIRECT PRODUCT PAGE REDIRECT (FIXED)
   // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
@@ -424,23 +424,21 @@ export default function Home() {
     localStorage.setItem('pendingDownload', JSON.stringify(pendingData));
     localStorage.removeItem('whop_payment_complete');
 
-    // 🎯 Build product page URLs from your product IDs
-    // You can also override these with NEXT_PUBLIC_* env vars
-    const productIdMap: Record<number, string> = {
-      5: process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID_STARTER || 'prod_E4LqwHMSpsAeA',
-      25: process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID_BUSINESS || 'prod_yW6DIDkhdrFLf',
-      45: process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID_CORPORATE || 'prod_IBoJWlU1a6NJC',
-      85: process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID_ENTERPRISE || 'prod_eHSxJk0SRhKJ8',
+    // ✅ CORRECT PRODUCT PAGE URLS
+    const productPageMap: Record<number, string> = {
+      5: 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',
+      25: 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',
+      45: 'https://whop.com/vercel-3f41/swiftledger-corporate-21-50-pages/',
+      85: 'https://whop.com/vercel-3f41/swiftledger-enterprise-51-pages/',
     };
 
-    const productId = productIdMap[price];
-    if (!productId) {
-      alert('Product ID not found for this price.');
+    const productUrl = productPageMap[price];
+    if (!productUrl) {
+      alert('Product page not found for this price.');
       localStorage.removeItem('pendingDownload');
       return;
     }
 
-    const productUrl = `https://whop.com/product/${productId}`;
     console.log('🔗 Opening product page:', productUrl);
     window.open(productUrl, '_blank');
   };
