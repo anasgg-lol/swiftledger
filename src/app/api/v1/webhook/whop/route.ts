@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 
+// Force Node.js runtime explicitly — Node's `crypto` module and Buffer
+// don't reliably work on the Edge runtime, and a module-level failure
+// there returns an empty response with no logs, which is what you were seeing.
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 // ---------- Standard Webhooks signature check (Whop's current webhook format) ----------
@@ -16,40 +20,50 @@ function verifyWhopSignature(rawBody: string, headers: Headers): boolean {
     return true;
   }
 
-  const id = headers.get('webhook-id');
-  const timestamp = headers.get('webhook-timestamp');
-  const signatureHeader = headers.get('webhook-signature');
+  try {
+    const id = headers.get('webhook-id');
+    const timestamp = headers.get('webhook-timestamp');
+    const signatureHeader = headers.get('webhook-signature');
 
-  if (!id || !timestamp || !signatureHeader) {
-    console.error('❌ Missing webhook-id/webhook-timestamp/webhook-signature headers');
+    if (!id || !timestamp || !signatureHeader) {
+      console.error('❌ Missing webhook-id/webhook-timestamp/webhook-signature headers');
+      return false;
+    }
+
+    // Reject anything older than 5 minutes (replay protection)
+    const ts = parseInt(timestamp, 10);
+    if (!ts || Math.abs(Date.now() / 1000 - ts) > 300) {
+      console.error('❌ Webhook timestamp outside allowed window');
+      return false;
+    }
+
+    const signedContent = `${id}.${timestamp}.${rawBody}`;
+    const expected = crypto
+      .createHmac('sha256', secret.replace(/^ws_/, ''))
+      .update(signedContent)
+      .digest('base64');
+    const expectedBuf = Buffer.from(expected);
+
+    // signatureHeader looks like: "v1,<sig>" (sometimes multiple space-separated "v1,<sig>" entries)
+    const candidates = signatureHeader
+      .split(' ')
+      .map((part) => part.split(',')[1])
+      .filter(Boolean);
+
+    return candidates.some((sig) => {
+      const sigBuf = Buffer.from(sig);
+      // timingSafeEqual throws if lengths differ — guard instead of crashing the request
+      if (sigBuf.length !== expectedBuf.length) return false;
+      return crypto.timingSafeEqual(sigBuf, expectedBuf);
+    });
+  } catch (e: any) {
+    console.error('❌ Signature verification threw an error:', e?.message || e);
     return false;
   }
-
-  // Reject anything older than 5 minutes (replay protection)
-  const ts = parseInt(timestamp, 10);
-  if (!ts || Math.abs(Date.now() / 1000 - ts) > 300) {
-    console.error('❌ Webhook timestamp outside allowed window');
-    return false;
-  }
-
-  const signedContent = `${id}.${timestamp}.${rawBody}`;
-  const expected = crypto
-    .createHmac('sha256', secret.replace(/^ws_/, ''))
-    .update(signedContent)
-    .digest('base64');
-
-  // signatureHeader looks like: "v1,<sig>" (sometimes multiple space-separated "v1,<sig>" entries)
-  const candidates = signatureHeader
-    .split(' ')
-    .map((part) => part.split(',')[1])
-    .filter(Boolean);
-
-  return candidates.some((sig) =>
-    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
-  );
 }
 
 export async function POST(req: Request) {
+  console.log('🟢 WEBHOOK HANDLER INVOKED (top of function, before anything else)');
   try {
     console.log('📡 INBOUND WHOP WEBHOOK RECEIVED...');
 
