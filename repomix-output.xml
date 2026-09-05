@@ -50,6 +50,8 @@ src/
   app/
     api/
       v1/
+        create-checkout/
+          route.ts
         parse/
           route.ts
         webhook/
@@ -845,6 +847,10 @@ const eslintConfig = defineConfig([
 export default eslintConfig;
 </file>
 
+<file path="git">
+
+</file>
+
 <file path="next.config.ts">
 import type { NextConfig } from "next";
 
@@ -987,10 +993,6 @@ next-env.d.ts
 .vercel
 </file>
 
-<file path="git">
-
-</file>
-
 <file path="src/app/api/v1/webhook/whop/route.ts">
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -1080,110 +1082,130 @@ export async function POST(req: Request) {
 }
 </file>
 
+<file path="src/app/api/v1/create-checkout/route.ts">
+import { NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(req: Request) {
+  try {
+    const { price, fileName, formats, bank } = await req.json();
+
+    if (!price) {
+      return NextResponse.json({ error: 'Missing price' }, { status: 400 });
+    }
+
+    const whopSecret = process.env.WHOP_API_KEY;
+    if (!whopSecret) {
+      console.error('❌ WHOP_API_KEY not set');
+      return NextResponse.json({ error: 'Server misconfigured - missing API key' }, { status: 500 });
+    }
+
+    // Log key format (first 15 chars only)
+    console.log('🔑 API Key loaded:', whopSecret.substring(0, 15) + '...');
+
+    const productIdMap: Record<number, string> = {
+      5: process.env.WHOP_PRODUCT_ID_STARTER || '',
+      25: process.env.WHOP_PRODUCT_ID_BUSINESS || '',
+      45: process.env.WHOP_PRODUCT_ID_CORPORATE || '',
+      85: process.env.WHOP_PRODUCT_ID_ENTERPRISE || '',
+    };
+
+    const productId = productIdMap[price];
+    if (!productId) {
+      return NextResponse.json({ error: `No product found for $${price}` }, { status: 400 });
+    }
+
+    // 🎯 Use checkout_configurations with a plan object
+    const requestBody = {
+      plan: {
+        product_id: productId,
+        interval: 'one_time',
+        currency: 'usd',
+        price: price * 100, // $5 → 500 cents
+      },
+      redirect_url: 'https://swiftledger-seven.vercel.app/payment/success',
+      metadata: {
+        fileName: fileName || 'statement',
+        formats: (formats || []).join(','),
+        bank: bank || '',
+      },
+    };
+
+    console.log('🚀 Sending to Whop (checkout_configurations):', JSON.stringify(requestBody, null, 2));
+
+    const response = await fetch('https://api.whop.com/api/v2/checkout_configurations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${whopSecret}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Whop API error:', data);
+      
+      let errorMsg = 'Checkout creation failed';
+      if (data.message) errorMsg = data.message;
+      else if (data.error) {
+        if (typeof data.error === 'string') errorMsg = data.error;
+        else if (data.error.message) errorMsg = data.error.message;
+        else errorMsg = JSON.stringify(data.error);
+      } else {
+        errorMsg = JSON.stringify(data);
+      }
+      
+      return NextResponse.json({ error: errorMsg }, { status: response.status });
+    }
+
+    // For checkout_configurations, the URL is https://whop.com/checkout/{data.id}
+    const checkoutUrl = `https://whop.com/checkout/${data.id}`;
+    console.log('✅ Checkout created:', checkoutUrl);
+    
+    return NextResponse.json({ url: checkoutUrl });
+  } catch (error: any) {
+    console.error('🔥 Unhandled exception:', error);
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
 <file path="src/app/payment/success/page.tsx">
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 import Link from 'next/link';
 
-function PaymentSuccessContent() {
-  const searchParams = useSearchParams();
-  const [downloadTriggered, setDownloadTriggered] = useState(false);
-  const [targetFileName, setTargetFileName] = useState('');
-  const [extractedRowsCount, setExtractedRowsCount] = useState(0);
-
+export default function PaymentSuccess() {
   useEffect(() => {
-    const isVerified = searchParams.get('payment_verified') === 'true';
-    
-    // 📡 لقط الـ Payload السحري العابر للأبعاد مباشرة من الـ URL!
-    const urlPayload = searchParams.get('payload');
-
-    if (isVerified && !downloadTriggered && urlPayload) {
-      try {
-        // 🚀 THE ULTIMATE BYPASS: نفك تشفير البيانات من الـ URL مباشرة بدون الحاجة للـ Cache الميت!
-        const decodedData = JSON.parse(atob(urlPayload));
-        const finalFileName = decodedData.file || 'statement';
-        const totalRows = decodedData.txCount || 18;
-        
-        // تصنيع أسطر متوازنة حسابياً لاسترجاع الـ Grid فوراً وبسرعة خارقة
-        const rowsData = Array.from({ length: totalRows }, (_, i) => ({
-          id: i + 1,
-          date: 'Oct 2025',
-          type: 'Transaction',
-          description: 'Verified Ledger Entry',
-          amount: '$0.00',
-          balance: `$${(decodedData.balance || 0).toFixed(2)}`
-        }));
-
-        if (rowsData.length > 0) {
-          const baseName = finalFileName.replace(/\.[^/.]+$/, '');
-          setTargetFileName(finalFileName);
-          setExtractedRowsCount(rowsData.length);
-
-          const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
-          const csvContent = [
-            headers.join(','), 
-            ...rowsData.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
-          ].join('\n');
-          
-          // ⚡ قذف الـ CSV Download فوراً وبدون أي نقرات في النافذة الجديدة!
-          const blob = new Blob([csvContent], { type: 'text/csv' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = baseName + '.csv';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-          
-          setDownloadTriggered(true);
-        }
-      } catch (err) {
-        console.error('URL Payload extraction mismatch:', err);
-      }
-    }
-  }, [searchParams, downloadTriggered]);
+    localStorage.setItem('whop_payment_complete', 'true');
+    setTimeout(() => {
+      window.close();
+    }, 4000);
+  }, []);
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6 text-center">
-      <div className="max-w-md bg-slate-950/50 border border-slate-800/80 p-8 rounded-3xl backdrop-blur-md shadow-2xl animate-fade-up">
-        <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+    <div className="min-h-screen bg-[#030712] text-white flex flex-col items-center justify-center p-6">
+      <div className="max-w-md text-center bg-slate-900/60 border border-slate-800 rounded-2xl p-8">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
           <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
             <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">🎉 Statement Secured!</h1>
-        <p className="text-slate-400 mt-2 text-sm leading-relaxed">
-          Your financial transaction ledger has been compiled and downloaded securely via encrypted URL dynamic payload streams.
-        </p>
-
-        {targetFileName && (
-          <div className="mt-4 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl flex flex-col gap-1">
-            <p className="text-[11px] text-emerald-400 font-mono tracking-tight truncate">📄 {targetFileName}</p>
-            <p className="text-[10px] text-slate-500">Secured {extractedRowsCount} rows completely</p>
-          </div>
-        )}
-
-        <div className="mt-6 border-t border-slate-800/60 pt-5">
-          <Link 
-            href="/"
-            className="inline-flex items-center justify-center px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold rounded-xl text-xs shadow-lg transition-all duration-200"
-          >
-            ← Return to Dashboard Terminal
-          </Link>
-        </div>
+        <h1 className="text-2xl font-bold">Payment Successful 🎉</h1>
+        <p className="text-slate-400 mt-2">Your files will start downloading in the original tab.</p>
+        <p className="text-slate-500 text-sm mt-4">This tab will close automatically.</p>
+        <Link href="/" className="inline-block mt-6 text-emerald-400 hover:underline">
+          ← Back to SwiftLedger
+        </Link>
       </div>
-    </main>
-  );
-}
-
-export default function PaymentSuccess() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-[#030712]" />}>
-      <PaymentSuccessContent />
-    </Suspense>
+    </div>
   );
 }
 </file>
@@ -1193,8 +1215,6 @@ export default function PaymentSuccess() {
 
 import React, { useState, useRef, useEffect } from 'react';
 import Footer from './components/Footer';
-import { supabase } from './lib/supabaseClient';
-
 
 interface Transaction {
   id: number;
@@ -1214,7 +1234,7 @@ const SAMPLE_DEMO_DATA: Transaction[] = [
   { id: 6, date: '5th November 2026', type: 'Direct Debit', description: 'Fitness Club Membership', amount: '-£32.50', balance: '£368.50' },
 ];
 
-// ============ HARDENED CURRENCY PARSER ============
+// ============ CURRENCY PARSER ============
 function parseCurrency(value: string): number {
   if (!value) return 0;
   const trimmed = value.trim();
@@ -1228,16 +1248,6 @@ function parseCurrency(value: string): number {
     numericValue = -Math.abs(numericValue);
   }
   return numericValue;
-}
-
-function getSignedAmount(row: Transaction): number {
-  const amount = parseCurrency(row.amount);
-  const debitTypes = ['Card Payment', 'Direct Debit', 'Cashpoint', 'Standing Order', 'Fee', 'POS WD', 'WIRE TRANSFER OUTGOING', 'ACH WD', 'DEBITS', 'WIRE OUT'];
-
-  if (amount > 0 && debitTypes.some(type => row.type.toUpperCase().includes(type.toUpperCase()) || row.description.toUpperCase().includes(type.toUpperCase()))) {
-    return -amount;
-  }
-  return amount;
 }
 
 // ============ FORMAT GENERATORS ============
@@ -1402,13 +1412,13 @@ function getPrice(pageCount: number): { price: number; label: string; tier: stri
   return { price: 85, label: 'Enterprise', tier: '51+ pages', badge: '🏢' };
 }
 export const dynamic = 'force-dynamic';
+
 // ============ MAIN COMPONENT ============
 export default function Home() {
   const [parsedData, setParsedData] = useState<Transaction[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [currentPageCount, setCurrentPageCount] = useState<number>(1);
   const [loadingTime, setLoadingTime] = useState<number>(0);
   const [showStats, setShowStats] = useState(false);
   const [selectedBank, setSelectedBank] = useState<string>('');
@@ -1420,7 +1430,6 @@ export default function Home() {
     ofx: true,
     qbo: true,
   });
-  const [pendingDownload, setPendingDownload] = useState<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1432,67 +1441,61 @@ export default function Home() {
     qbo: { label: '📈 .QBO', desc: 'QuickBooks direct import', color: 'text-purple-400' },
   };
 
-  // Reads whatever the customer actually selected before checkout and releases
-  // ALL of those formats — not just a hardcoded CSV — then cleans up storage.
-  const releasePendingFiles = () => {
-    const rawPending = localStorage.getItem('pendingDownload');
-    if (!rawPending) return;
-    try {
-      const pendingData = JSON.parse(rawPending);
-      const baseName = (pendingData.fileName || 'statement').replace(/\.[^/.]+$/, '');
-      downloadAllFormats(pendingData.rows, baseName, pendingData.formats || ['csv'], pendingData.bank || '');
-      alert('🎉 Success! Payment verified via server webhook. Your files are downloading now.');
-      localStorage.removeItem('pendingDownload');
-      localStorage.removeItem('activePassToken');
-    } catch (err) {
-      console.error('Realtime file release error:', err);
-    }
-  };
-
-    // 📡 THE UN-KILLABLE RELOAD-PROOF FILE RELEASER (SELLIX EDITION)
+  // ============================================================
+  // 🔥 WHOP STORAGE EVENT LISTENER – triggers download in original tab
+  // ============================================================
   useEffect(() => {
-    // فحص الرابط: إذا رجعنا من Sellix والـ URL يحتوي على إشارة النجاح
-    const urlParams = new URLSearchParams(window.location.search);
-    const isVerified = urlParams.get('payment_verified') === 'true';
-    const rawPending = localStorage.getItem('pendingDownload');
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'whop_payment_complete' && e.newValue === 'true') {
+        const raw = localStorage.getItem('pendingDownload');
+        if (!raw) return;
 
-    if (isVerified && rawPending) {
-      try {
-        const pendingData = JSON.parse(rawPending);
-        const { rows, fileName } = pendingData;
-
-        if (rows && rows.length) {
-          const baseName = fileName.replace(/\.[^/.]+$/, '');
-          const headers = ['ID', 'Date', 'Type', 'Description', 'Amount', 'Balance'];
-          const csvContent = [
-            headers.join(','), 
-            ...rows.map((r: any) => [r.id, r.date, r.type, r.description, r.amount, r.balance].map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
-          ].join('\n');
-          
-          // ⚡ قذف وتحميل الـ CSV فوراً وبدون أي نقرات! [pdf_XZdc6j.pdf]
-          const blob = new Blob([csvContent], { type: 'text/csv' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = baseName + '.csv';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-
-          alert('🎉 Success! Payment Verified via Sellix. Your file has been downloaded.');
-          
-          // تنظيف الـ الذاكرة لحماية الخصوصية وتأمين السيستم [pdf_XZdc6j.pdf]
-          localStorage.removeItem('pendingDownload');
-          // تنظيف الرابط وإرجاعه نظيفاً بدون Query Params
-          window.history.replaceState({}, document.title, "/");
+        try {
+          const pending = JSON.parse(raw);
+          const { rows, fileName: fname, formats, bank } = pending;
+          if (rows && rows.length) {
+            const baseName = fname.replace(/\.[^/.]+$/, '');
+            downloadAllFormats(rows, baseName, formats, bank);
+            alert('🎉 Payment verified! Your files have been downloaded.');
+            localStorage.removeItem('pendingDownload');
+            localStorage.removeItem('whop_payment_complete');
+          }
+        } catch (err) {
+          console.error('Download error:', err);
         }
-      } catch (err) {
-        console.error('File release engine fault:', err);
       }
-    }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
+  // ============================================================
+  // 🔥 RELOAD SAFETY – if user refreshes original tab after payment
+  // ============================================================
+  useEffect(() => {
+    const checkPending = () => {
+      if (localStorage.getItem('whop_payment_complete') === 'true') {
+        const raw = localStorage.getItem('pendingDownload');
+        if (raw) {
+          try {
+            const pending = JSON.parse(raw);
+            const { rows, fileName: fname, formats, bank } = pending;
+            if (rows && rows.length) {
+              const baseName = fname.replace(/\.[^/.]+$/, '');
+              downloadAllFormats(rows, baseName, formats, bank);
+              alert('🎉 Payment verified! Your files have been downloaded.');
+              localStorage.removeItem('pendingDownload');
+              localStorage.removeItem('whop_payment_complete');
+            }
+          } catch (err) {
+            console.error('Reload download error:', err);
+          }
+        }
+      }
+    };
+    checkPending();
+  }, []);
 
   // ============ FILE UPLOAD ============
   const handleFileUpload = async (file: File) => {
@@ -1510,7 +1513,7 @@ export default function Home() {
 
     try {
       const formData = new FormData();
-      formData.append('file', file); // Streams pristine digital text layer signatures to backend safely
+      formData.append('file', file);
 
       const res = await fetch('/api/v1/parse', {
         method: 'POST',
@@ -1527,8 +1530,6 @@ export default function Home() {
       if (data.success) {
         const rows = data.rows || [];
         setParsedData(rows);
-        setCurrentPageCount(data.page_count || 1);
-
         const priceInfo = getPrice(data.page_count || 1);
         const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
 
@@ -1538,9 +1539,6 @@ export default function Home() {
           if (cleanedAmt < 0) totalDebits += Math.abs(cleanedAmt);
           else totalCredits += cleanedAmt;
         });
-
-        // Inform the customer exactly which performance cluster processed their file ledger
-        const engineLabel = data.engine_used || 'SwiftLedger Hyper-Speed Core';
 
         setStats({
           fileName: file.name,
@@ -1556,7 +1554,7 @@ export default function Home() {
           firstDate: rows[0]?.date || '—',
           lastDate: lastRow?.date || '—',
           processing_time_ms: data.processing_time_ms || 0,
-          engineUsedLabel: engineLabel
+          engineUsedLabel: data.engine_used || 'SwiftLedger Hyper-Speed Core'
         });
 
         setShowStats(true);
@@ -1590,7 +1588,6 @@ export default function Home() {
   const loadDemo = () => {
     setFileName('sample_statement_demo.pdf');
     setParsedData(SAMPLE_DEMO_DATA);
-    setCurrentPageCount(6);
     const priceInfo = getPrice(6);
     let totalCredits = 0, totalDebits = 0;
     SAMPLE_DEMO_DATA.forEach((tx) => {
@@ -1616,14 +1613,9 @@ export default function Home() {
     setShowStats(true);
   };
 
-  // ============ WHOP PAYMENT URLS ============
-  const whopUrls: Record<string, string> = {
-    '5': 'https://whop.com',
-    '25': 'https://whop.com',
-    '45': 'https://whop.com',
-    '85': 'https://whop.com',
-  };
-
+  // ============================================================
+  // 🔥 PAYMENT HANDLER – calls the API and shows error details
+  // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
 
@@ -1633,36 +1625,37 @@ export default function Home() {
       return;
     }
 
-    // إرجاع الـ whopUrls الأصلية لتأمين بوابة Whop لايف
-    const baseCheckoutUrl = whopUrls[stats.price.toString()];
-    if (!baseCheckoutUrl) {
-      alert(`No Whop checkout link found for price $${stats.price}.`);
-      return;
-    }
+    const price = stats.price;
 
-    // 💡 THE FINTECH CHEAT CODE: تحويل أرقام الأسطر والـ metadata لـ Base64 Payload وحقنها في الرابط!
-    const payloadData = {
-      txCount: parsedData.length,
-      file: fileName || 'statement',
-      balance: stats.netBalance
+    const pendingData = {
+      rows: parsedData,
+      fileName: fileName || 'statement',
+      formats,
+      bank: selectedBank,
     };
-    const b64Payload = btoa(JSON.stringify(payloadData));
+    localStorage.setItem('pendingDownload', JSON.stringify(pendingData));
+    localStorage.removeItem('whop_payment_complete');
 
-    // شحن رابط Whop بالـ pass_token والـ Payload عابر للقارات والنوافذ المعزولة!
-    const checkoutUrl = `${baseCheckoutUrl}?pass_token=${Date.now()}_${Math.random().toString(36).substring(7)}&payload=${b64Payload}`;
+    try {
+      const response = await fetch('/api/v1/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price, fileName, formats, bank: selectedBank }),
+      });
 
-    console.log('🚀 INITIALIZING SAFE ENCRYPTED PAYLOAD CHECKOUT ON WHOP...');
-    window.open(checkoutUrl, '_blank'); // يفتح في نافذة جديدة عادي والـ Whop يرجع الداتا كاملة
-  };
+      const data = await response.json();
 
-  const handleDownloadAfterPayment = () => {
-    if (!pendingDownload) return;
+      if (!response.ok || !data.url) {
+        // data.error now contains the full error message from Whop
+        throw new Error(data.error || 'Checkout creation failed');
+      }
 
-    const { rows, fileName, formats, bank } = pendingDownload;
-    downloadAllFormats(rows, fileName, formats, bank);
-
-    sessionStorage.removeItem('pendingDownload');
-    setPendingDownload(null);
+      window.open(data.url, '_blank');
+    } catch (error: any) {
+      console.error('Checkout creation error:', error);
+      alert(`Error starting checkout: ${error.message}`);
+      localStorage.removeItem('pendingDownload');
+    }
   };
 
   const toggleFormat = (format: string) => {
@@ -1801,24 +1794,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Pending Download Notification */}
-      {pendingDownload && (
-        <div className="w-full max-w-4xl mx-auto z-10 mt-4">
-          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-emerald-400 font-medium">✅ Payment detected!</p>
-              <p className="text-slate-400 text-sm">Your files are ready to download.</p>
-            </div>
-            <button
-              onClick={handleDownloadAfterPayment}
-              className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold rounded-xl text-sm shadow-[0_0_30px_rgba(16,185,129,0.15)] transition-all duration-300"
-            >
-              📥 Download {pendingDownload.formats?.length || 0} Formats
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Stats Card */}
       {showStats && stats && parsedData.length > 0 && !loading && (
         <div className="w-full max-w-4xl mx-auto z-10 mt-6">
@@ -1948,7 +1923,6 @@ export default function Home() {
                       <td className="p-2.5 text-right text-slate-400/60">{row.balance}</td>
                     </tr>
                   ))}
-
 
                   {parsedData.slice(5, 7).map((row) => (
                     <tr key={row.id} className="select-none blur-[3px] opacity-25 pointer-events-none">
