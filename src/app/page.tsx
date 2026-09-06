@@ -430,10 +430,10 @@ export default function Home() {
 
     // CORRECT PRODUCT PAGE URLS
     const productPageMap: Record<number, string> = {
-      5: 'https://whop.com',
-      25: 'https://whop.com',
-      45: 'https://whop.com',
-      85: 'https://whop.com',
+      5: 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',
+      25: 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',
+      45: 'https://whop.com/vercel-3f41/swiftledger-corporate-21-50-pages/',
+      85: 'https://whop.com/vercel-3f41/swiftledger-enterprise-51-pages/',
     };
 
     const productUrl = productPageMap[price];
