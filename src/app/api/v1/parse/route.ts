@@ -11,11 +11,65 @@ if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
 }
 
-// Helper to parse strings cleanly into decimal numbers for precise balancing
+// Helper to parse strings cleanly into decimal numbers for precise balancing.
+// ✅ FIX: now sign-aware for the two other common negative-number conventions
+// banks use besides a leading "-": accounting parentheses "(1,234.56)" and a
+// trailing "DR"/"CR" suffix. Previously the regex silently stripped both the
+// parens and the letters, throwing away the sign entirely.
 function cleanMathValue(val: string): number {
   if (!val) return 0;
-  const cleaned = val.replace(/[^0-9.\-]/g, '');
-  return parseFloat(cleaned) || 0;
+  let str = String(val).trim();
+  let negative = false;
+
+  if (/^\(.*\)$/.test(str)) {
+    negative = true;
+    str = str.slice(1, -1);
+  }
+
+  const upper = str.toUpperCase();
+  if (/(^|\s)DR(\s|$)/.test(upper)) negative = true;
+  if (/(^|\s)CR(\s|$)/.test(upper)) negative = false;
+
+  const cleaned = str.replace(/[^0-9.\-]/g, '');
+  let num = parseFloat(cleaned) || 0;
+  if (negative) num = -Math.abs(num);
+  return num;
+}
+
+// ✅ NEW: normalizes the DISPLAYED amount string to a plain leading-minus format
+// ("-$8,200.00") whenever it detects parentheses or a DR/CR suffix, so every
+// output format (CSV/Xero/OFX/QBO) gets a consistent signed number instead of
+// notation those formats don't understand. Leaves already-normal strings
+// (with commas, existing "$", existing "-") completely untouched.
+function normalizeAmountSign(raw: string): string {
+  if (!raw) return raw;
+  let str = String(raw).trim();
+  let negative = false;
+  let changed = false;
+
+  if (/^\(.*\)$/.test(str)) {
+    negative = true;
+    str = str.slice(1, -1).trim();
+    changed = true;
+  }
+
+  if (/(^|\s)DR(\s|$)/i.test(str)) {
+    negative = true;
+    str = str.replace(/\s*DR\s*$/i, '').trim();
+    changed = true;
+  }
+  if (/(^|\s)CR(\s|$)/i.test(str)) {
+    str = str.replace(/\s*CR\s*$/i, '').trim();
+    changed = true;
+  }
+
+  if (!changed) return raw; // nothing unusual detected — leave formatting exactly as-is
+
+  const alreadyNegative = str.startsWith('-');
+  if (negative && !alreadyNegative) {
+    str = str.replace(/^(\$?)/, '-$1');
+  }
+  return str;
 }
 
 // ============ COLUMN HEADER KEYWORD DICTIONARIES ============
@@ -148,7 +202,7 @@ export async function POST(req: Request) {
     Return ONLY a JSON array where each object strictly matches this schema mapping layout:
     [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
     CRITICAL: Extract EVERY single printed transaction row. Do not truncate, skip, or summarize anything.
-    CRITICAL SIGN RULE: If the statement has separate "Debit"/"Withdrawal" and "Credit"/"Deposit" columns, you MUST return "amount" as a NEGATIVE number for any value found in the Debit/Withdrawal column, and a POSITIVE number for any value found in the Credit/Deposit column. Never drop the dollar figure into the description field — it must always appear in the "amount" field, signed correctly.`;
+    CRITICAL SIGN RULE: If the statement has separate "Debit"/"Withdrawal" and "Credit"/"Deposit" columns, you MUST return "amount" as a NEGATIVE number for any value found in the Debit/Withdrawal column, and a POSITIVE number for any value found in the Credit/Deposit column. If instead amounts use parentheses like "(1,234.56)" or a trailing "DR" suffix to mean negative, still return a plain NEGATIVE number, not the parentheses/suffix notation. Never drop the dollar figure into the description field — it must always appear in the "amount" field, signed correctly.`;
 
     // Attempt standard fast vector geometry pass first
     let { pages, rawText } = await extractGeometryNatively(buffer);
@@ -165,6 +219,7 @@ export async function POST(req: Request) {
 
     let combinedTransactions: any[] = [];
     let localSuccess = false;
+    let detectedFormat = 'unknown';
 
     // 🧱 GEOMETRIC MATCHING PASS WITH ACCOUNTING ARITHMETIC RECONCILIATION
     if (pages.length > 0 && rawText.trim().length > 50) {
@@ -172,9 +227,8 @@ export async function POST(req: Request) {
         let globalTxList: any[] = [];
         let totalMathChecksPassed = true;
 
-        // ✅ FIX: column x-positions now live OUTSIDE the per-page loop and persist across
-        // pages. Many real statements only print the column header once, on page 1 — the
-        // old per-page reset meant page 2+ silently fell back to hardcoded guesses.
+        // Column x-positions persist across pages — many statements only print the
+        // column header once, on page 1.
         let dateX = 0, descX = 10, debitX = 0, creditX = 0, amtX = 35, balX = 45;
         let hasDebitCol = false, hasCreditCol = false, columnsCalibrated = false;
 
@@ -185,8 +239,6 @@ export async function POST(req: Request) {
           pageData.structuredLines.forEach((line: any[]) => {
             const combinedLineText = line.map((t: any) => t.text).join(' ').toUpperCase();
 
-            // ✅ FIX: broadened header recognition (see keyword dictionaries above) instead
-            // of only exact "DATE"/"DEBIT"/"CREDIT"/"DESC"/"PARTICULARS" tokens.
             if (matchesAny(combinedLineText, DATE_KW) && matchesAny(combinedLineText, BALANCE_KW)) {
               line.forEach((token: any) => {
                 const text = token.text.toUpperCase();
@@ -198,6 +250,7 @@ export async function POST(req: Request) {
                 if (matchesAny(text, BALANCE_KW)) balX = token.x;
               });
               columnsCalibrated = true;
+              detectedFormat = hasDebitCol && hasCreditCol ? 'dual_column (debit/credit)' : 'single_column (signed amount)';
               return;
             }
 
@@ -206,7 +259,6 @@ export async function POST(req: Request) {
             if (!columnsCalibrated) return;
 
             const dualColumnMode = hasDebitCol && hasCreditCol;
-            // Numeric columns available for classification (excludes date & description)
             const numericCols: { key: 'debit' | 'credit' | 'amt' | 'bal'; x: number }[] = dualColumnMode
               ? [{ key: 'debit', x: debitX }, { key: 'credit', x: creditX }, { key: 'bal', x: balX }]
               : [{ key: 'amt', x: amtX }, { key: 'bal', x: balX }];
@@ -217,9 +269,6 @@ export async function POST(req: Request) {
               if (Math.abs(token.x - dateX) < 4) { rowDate = token.text; return; }
               if (token.x < descBoundary - 2) { rowDesc += token.text + ' '; return; }
 
-              // ✅ FIX: nearest-column classification instead of assuming a fixed left-to-right
-              // column order — works whether Debit is left or right of Credit, and regardless
-              // of exact column spacing on a given bank's layout.
               let best = numericCols[0];
               let bestDist = Math.abs(token.x - best.x);
               for (const c of numericCols) {
@@ -234,14 +283,16 @@ export async function POST(req: Request) {
 
             rowDesc = rowDesc.trim();
 
-            // Combine Debit/Credit into one correctly-signed amount. Debit = money out
-            // (negative). Credit = money in (positive).
             if (dualColumnMode) {
               const debitVal = cleanMathValue(rowDebit);
               const creditVal = cleanMathValue(rowCredit);
-              if (debitVal !== 0) rowAmt = `-${rowDebit.replace(/^-/, '')}`;
-              else if (creditVal !== 0) rowAmt = rowCredit;
+              if (debitVal !== 0) rowAmt = `-${normalizeAmountSign(rowDebit).replace(/^-/, '')}`;
+              else if (creditVal !== 0) rowAmt = normalizeAmountSign(rowCredit);
               else rowAmt = '';
+            } else {
+              // ✅ FIX: single-signed-amount statements can still use parentheses or a
+              // DR/CR suffix instead of a plain "-" — normalize those here too.
+              rowAmt = normalizeAmountSign(rowAmt);
             }
 
             if (rowDate && (rowAmt || rowBal)) {
@@ -261,10 +312,6 @@ export async function POST(req: Request) {
 
               if (prevBal !== 0 && currBal !== 0) {
                 if (txAmt === 0) {
-                  // ✅ FIX: previously any row with amount extracted as 0 skipped validation
-                  // entirely — which is exactly how the debit/credit column bug slipped past
-                  // this check undetected. A real zero-amount row means the balance shouldn't
-                  // have moved; verify that instead of silently trusting it.
                   if (Math.abs(prevBal - currBal) > 0.05) { pageValid = false; break; }
                 } else {
                   const matchesNormalMath = Math.abs(prevBal + txAmt - currBal) < 0.05 || Math.abs(prevBal - txAmt - currBal) < 0.05;
@@ -286,7 +333,7 @@ export async function POST(req: Request) {
         if (totalMathChecksPassed && globalTxList.length > 0) {
           combinedTransactions = globalTxList;
           localSuccess = true;
-          console.log(`⚡ LOCAL GEOMETRIC DRIVEWAY SUCCESS: Parsed ${combinedTransactions.length} balanced records natively.`);
+          console.log(`⚡ LOCAL GEOMETRIC DRIVEWAY SUCCESS: Parsed ${combinedTransactions.length} balanced records natively. Format: ${detectedFormat}`);
         }
       } catch (err) {
         console.warn('⚠️ Local coordinate calculation mismatch. Switching to fallback models...', err);
@@ -297,6 +344,7 @@ export async function POST(req: Request) {
     if (!localSuccess && apiKey) {
       console.log('📸 LOCAL MATHEMATICS SHIELD BROKEN: REVERTING CLOUD CLUSTER CHUNKS NATIVELY...');
       engineUsed = 'SwiftLedger Async Worker Pipeline Fallback';
+      detectedFormat = 'delegated_to_cloud_model';
       
       const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
       const totalPages = pdfDoc.getPageCount();
@@ -336,16 +384,17 @@ export async function POST(req: Request) {
       date: tx.date || '',
       type: tx.type || 'Transaction',
       description: (tx.description || '').trim(),
-      amount: typeof tx.amount === 'number' ? `$${tx.amount.toFixed(2)}` : String(tx.amount || '$0.00'),
+      amount: normalizeAmountSign(typeof tx.amount === 'number' ? `$${tx.amount.toFixed(2)}` : String(tx.amount || '$0.00')),
       balance: typeof tx.balance === 'number' ? `$${tx.balance.toFixed(2)}` : String(tx.balance || '$0.00')
     }));
 
-    console.log(`✅ PARSER ARCHITECTURE SUCCESS: ${finalizedRows.length} ROWS SECURED VIA [${engineUsed}].`);
+    console.log(`✅ PARSER ARCHITECTURE SUCCESS: ${finalizedRows.length} ROWS SECURED VIA [${engineUsed}]. Format detected: ${detectedFormat}`);
 
     return NextResponse.json({ 
       success: true, 
       filename: file.name, 
       engine_used: engineUsed, 
+      format_detected: detectedFormat,
       total_transactions: finalizedRows.length, 
       page_count: pages.length || 1, 
       rows: finalizedRows 
