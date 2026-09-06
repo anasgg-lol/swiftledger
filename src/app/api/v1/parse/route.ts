@@ -18,6 +18,17 @@ function cleanMathValue(val: string): number {
   return parseFloat(cleaned) || 0;
 }
 
+// ============ COLUMN HEADER KEYWORD DICTIONARIES ============
+// Broadened so the geometry pass recognizes column headers across different
+// bank statement wordings, not just "Debit"/"Credit"/"Description".
+const DATE_KW = ['DATE'];
+const DESC_KW = ['DESC', 'PARTICULAR', 'NARRATIV', 'DETAIL', 'MEMO', 'REMARK'];
+const DEBIT_KW = ['DEBIT', 'WITHDRAWAL', 'WITHDRAWALS'];
+const CREDIT_KW = ['CREDIT', 'DEPOSIT', 'DEPOSITS'];
+const AMOUNT_KW = ['AMOUNT'];
+const BALANCE_KW = ['BALANCE'];
+const matchesAny = (text: string, kws: string[]) => kws.some((k) => text.includes(k));
+
 // ============ BULLETPROOF NATIVE RESPONSE TOKEN MAPPER ============
 function parseGeminiResponse(text: string): any[] {
   let clean = text.trim().replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -161,52 +172,70 @@ export async function POST(req: Request) {
         let globalTxList: any[] = [];
         let totalMathChecksPassed = true;
 
+        // ✅ FIX: column x-positions now live OUTSIDE the per-page loop and persist across
+        // pages. Many real statements only print the column header once, on page 1 — the
+        // old per-page reset meant page 2+ silently fell back to hardcoded guesses.
+        let dateX = 0, descX = 10, debitX = 0, creditX = 0, amtX = 35, balX = 45;
+        let hasDebitCol = false, hasCreditCol = false, columnsCalibrated = false;
+
         for (let p = 0; p < pages.length; p++) {
           const pageData = pages[p];
           let pageTxList: any[] = [];
 
-          // NOTE: dual-column statements (Debit AND Credit as two separate columns) need
-          // two tracked x-positions, not one. Single-column statements (one signed "Amount"
-          // column) still fall back to the original amtX behavior below.
-          let dateX = 0, descX = 10, debitX = 0, creditX = 0, amtX = 35, balX = 45;
-          let hasDebitCol = false, hasCreditCol = false;
-
           pageData.structuredLines.forEach((line: any[]) => {
-            let combinedLineText = line.map((t: any) => t.text).join(' ').toUpperCase();
-            
-            if (combinedLineText.includes('DATE') && combinedLineText.includes('BALANCE')) {
+            const combinedLineText = line.map((t: any) => t.text).join(' ').toUpperCase();
+
+            // ✅ FIX: broadened header recognition (see keyword dictionaries above) instead
+            // of only exact "DATE"/"DEBIT"/"CREDIT"/"DESC"/"PARTICULARS" tokens.
+            if (matchesAny(combinedLineText, DATE_KW) && matchesAny(combinedLineText, BALANCE_KW)) {
               line.forEach((token: any) => {
                 const text = token.text.toUpperCase();
-                if (text.includes('DATE')) dateX = token.x;
-                if (text.includes('DESC') || text.includes('PARTICULARS')) descX = token.x;
-                // ✅ FIX: track Debit and Credit as two SEPARATE columns instead of one
-                // shared amtX that the Credit header was silently overwriting.
-                if (text.includes('DEBIT') || text.includes('WITHDRAWAL')) { debitX = token.x; hasDebitCol = true; }
-                if (text.includes('CREDIT') || text.includes('DEPOSIT')) { creditX = token.x; hasCreditCol = true; }
-                if (text.includes('AMOUNT') && !text.includes('DEBIT') && !text.includes('CREDIT')) amtX = token.x;
-                if (text.includes('BALANCE')) balX = token.x;
+                if (matchesAny(text, DATE_KW)) dateX = token.x;
+                if (matchesAny(text, DESC_KW)) descX = token.x;
+                if (matchesAny(text, DEBIT_KW)) { debitX = token.x; hasDebitCol = true; }
+                if (matchesAny(text, CREDIT_KW)) { creditX = token.x; hasCreditCol = true; }
+                if (matchesAny(text, AMOUNT_KW) && !matchesAny(text, DEBIT_KW) && !matchesAny(text, CREDIT_KW)) amtX = token.x;
+                if (matchesAny(text, BALANCE_KW)) balX = token.x;
               });
-              return; 
+              columnsCalibrated = true;
+              return;
             }
 
+            // Nothing calibrated yet anywhere in the document (still in title/address/summary
+            // lines before the table starts) — skip rather than guess with defaults.
+            if (!columnsCalibrated) return;
+
             const dualColumnMode = hasDebitCol && hasCreditCol;
-            // Where the description zone ends: the earlier of the two amount-like columns
-            const descEndX = dualColumnMode ? Math.min(debitX, creditX) : amtX;
+            // Numeric columns available for classification (excludes date & description)
+            const numericCols: { key: 'debit' | 'credit' | 'amt' | 'bal'; x: number }[] = dualColumnMode
+              ? [{ key: 'debit', x: debitX }, { key: 'credit', x: creditX }, { key: 'bal', x: balX }]
+              : [{ key: 'amt', x: amtX }, { key: 'bal', x: balX }];
+            const descBoundary = Math.min(...numericCols.map((c) => c.x));
 
             let rowDate = '', rowDesc = '', rowDebit = '', rowCredit = '', rowAmt = '', rowBal = '';
             line.forEach((token: any) => {
-              if (Math.abs(token.x - dateX) < 4) rowDate = token.text;
-              else if (token.x >= descX && token.x < descEndX - 2) rowDesc += token.text + ' ';
-              else if (dualColumnMode && token.x >= debitX - 2 && token.x < creditX - 2) rowDebit = token.text;
-              else if (dualColumnMode && token.x >= creditX - 2 && token.x < balX - 2) rowCredit = token.text;
-              else if (!dualColumnMode && token.x >= amtX - 2 && token.x < balX - 2) rowAmt = token.text;
-              else if (token.x >= balX - 2) rowBal = token.text;
+              if (Math.abs(token.x - dateX) < 4) { rowDate = token.text; return; }
+              if (token.x < descBoundary - 2) { rowDesc += token.text + ' '; return; }
+
+              // ✅ FIX: nearest-column classification instead of assuming a fixed left-to-right
+              // column order — works whether Debit is left or right of Credit, and regardless
+              // of exact column spacing on a given bank's layout.
+              let best = numericCols[0];
+              let bestDist = Math.abs(token.x - best.x);
+              for (const c of numericCols) {
+                const d = Math.abs(token.x - c.x);
+                if (d < bestDist) { best = c; bestDist = d; }
+              }
+              if (best.key === 'debit') rowDebit = token.text;
+              else if (best.key === 'credit') rowCredit = token.text;
+              else if (best.key === 'amt') rowAmt = token.text;
+              else rowBal = token.text;
             });
 
             rowDesc = rowDesc.trim();
 
-            // ✅ FIX: combine the two columns into one correctly-signed amount.
-            // Debit = money out (negative). Credit = money in (positive).
+            // Combine Debit/Credit into one correctly-signed amount. Debit = money out
+            // (negative). Credit = money in (positive).
             if (dualColumnMode) {
               const debitVal = cleanMathValue(rowDebit);
               const creditVal = cleanMathValue(rowCredit);
@@ -229,10 +258,18 @@ export async function POST(req: Request) {
               const prevBal = cleanMathValue(pageTxList[i-1].balance);
               const currBal = cleanMathValue(pageTxList[i].balance);
               const txAmt = cleanMathValue(pageTxList[i].amount);
-              
-              if (txAmt !== 0 && prevBal !== 0 && currBal !== 0) {
-                const matchesNormalMath = Math.abs(prevBal + txAmt - currBal) < 0.05 || Math.abs(prevBal - txAmt - currBal) < 0.05;
-                if (!matchesNormalMath) { pageValid = false; break; }
+
+              if (prevBal !== 0 && currBal !== 0) {
+                if (txAmt === 0) {
+                  // ✅ FIX: previously any row with amount extracted as 0 skipped validation
+                  // entirely — which is exactly how the debit/credit column bug slipped past
+                  // this check undetected. A real zero-amount row means the balance shouldn't
+                  // have moved; verify that instead of silently trusting it.
+                  if (Math.abs(prevBal - currBal) > 0.05) { pageValid = false; break; }
+                } else {
+                  const matchesNormalMath = Math.abs(prevBal + txAmt - currBal) < 0.05 || Math.abs(prevBal - txAmt - currBal) < 0.05;
+                  if (!matchesNormalMath) { pageValid = false; break; }
+                }
               }
             }
             pageBalancesReconciled = pageValid;
