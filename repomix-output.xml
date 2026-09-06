@@ -993,53 +993,6 @@ next-env.d.ts
 .vercel
 </file>
 
-<file path="src/app/api/v1/webhook/whop/route.ts">
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-export const maxDuration = 60;
-
-export async function POST(req: Request) {
-  try {
-    console.log('📡 INBOUND VERIFIED SECURITY HANDSHAKE FROM WHOP...');
-    
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    if (!supabaseUrl || !supabaseServiceKey) {
-      return NextResponse.json({ success: false, error: 'Configuration missing' }, { status: 500 });
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const body = await req.json();
-
-    // Isolate the matching order token from Whop's returning checkout metadata ledger
-    const orderId = body?.data?.metadata?.order_id || body?.data?.order_id;
-    const eventType = body?.action || body?.event;
-
-    if (!orderId) {
-      console.warn('⚠️ Webhook bypassed: No order_id present in incoming metadata array.');
-      return NextResponse.json({ received: true, message: 'Skipped: Missing order identifier' });
-    }
-
-    // Flip the specific record entry to completed inside your database
-    console.log(`🔒 SECURING TRANSACTION LEVERAGE: Order ID [${orderId}] verified.`);
-    
-    const { error } = await supabase
-      .from('ledger_orders')
-      .update({ payment_status: 'completed' })
-      .eq('order_id', orderId);
-
-    if (error) throw error;
-    console.log('🚀 SUPABASE POSTGRES TRANSACTION FLASHED GREEN LAUNCH.');
-
-    return NextResponse.json({ success: true, received: true });
-  } catch (err: any) {
-    console.error('❌ Root Webhook Critical Breakdown:', err.message || err);
-    return NextResponse.json({ success: false, error: 'Internal pipeline lock exception' }, { status: 500 });
-  }
-}
-</file>
-
 <file path="package.json">
 {
   "name": "document-parser",
@@ -1172,6 +1125,199 @@ export async function POST(req: Request) {
       { error: error.message || 'Internal server error' },
       { status: 500 }
     );
+  }
+}
+</file>
+
+<file path="src/app/api/v1/webhook/whop/route.ts">
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import * as crypto from 'crypto';
+
+// Force Node.js runtime explicitly — Node's `crypto` module and Buffer
+// don't reliably work on the Edge runtime, and a module-level failure
+// there returns an empty response with no logs, which is what you were seeing.
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+// ---------- Standard Webhooks signature check (Whop's current webhook format) ----------
+// Whop signs: `${webhook-id}.${webhook-timestamp}.${raw body}` with HMAC-SHA256,
+// using your `ws_...` secret. Header is `webhook-signature: v1,<base64 sig>`.
+// If you haven't set WHOP_WEBHOOK_SECRET yet, this just logs a warning and continues
+// (so you don't get locked out) — but you should set it ASAP so randoms can't fake events.
+function verifyWhopSignature(rawBody: string, headers: Headers): boolean {
+  const secret = process.env.WHOP_WEBHOOK_SECRET;
+  if (!secret) {
+    console.warn('⚠️ WHOP_WEBHOOK_SECRET not set — skipping signature check (set this ASAP)');
+    return true;
+  }
+
+  try {
+    const id = headers.get('webhook-id');
+    const timestamp = headers.get('webhook-timestamp');
+    const signatureHeader = headers.get('webhook-signature');
+
+    if (!id || !timestamp || !signatureHeader) {
+      console.error('❌ Missing webhook-id/webhook-timestamp/webhook-signature headers');
+      return false;
+    }
+
+    // Reject anything older than 5 minutes (replay protection)
+    const ts = parseInt(timestamp, 10);
+    if (!ts || Math.abs(Date.now() / 1000 - ts) > 300) {
+      console.error('❌ Webhook timestamp outside allowed window');
+      return false;
+    }
+
+    const signedContent = `${id}.${timestamp}.${rawBody}`;
+    const expected = crypto
+      .createHmac('sha256', secret.replace(/^ws_/, ''))
+      .update(signedContent)
+      .digest('base64');
+    const expectedBuf = Buffer.from(expected);
+
+    // signatureHeader looks like: "v1,<sig>" (sometimes multiple space-separated "v1,<sig>" entries)
+    const candidates = signatureHeader
+      .split(' ')
+      .map((part) => part.split(',')[1])
+      .filter(Boolean);
+
+    return candidates.some((sig) => {
+      const sigBuf = Buffer.from(sig);
+      // timingSafeEqual throws if lengths differ — guard instead of crashing the request
+      if (sigBuf.length !== expectedBuf.length) return false;
+      return crypto.timingSafeEqual(sigBuf, expectedBuf);
+    });
+  } catch (e: any) {
+    console.error('❌ Signature verification threw an error:', e?.message || e);
+    return false;
+  }
+}
+
+export async function POST(req: Request) {
+  console.log('🟢 WEBHOOK HANDLER INVOKED (top of function, before anything else)');
+  try {
+    console.log('📡 INBOUND WHOP WEBHOOK RECEIVED...');
+
+    // ----- 0. Read RAW body first (needed for signature check; parsing first breaks it) -----
+    const rawBody = await req.text();
+
+    if (!verifyWhopSignature(rawBody, req.headers)) {
+      console.error('❌ Webhook signature verification failed — rejecting');
+      return NextResponse.json({ received: false, error: 'Invalid signature' }, { status: 401 });
+    }
+
+    const body = JSON.parse(rawBody);
+
+    // ----- 1. Init Supabase -----
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Supabase config missing');
+      return NextResponse.json({ success: false, error: 'Configuration missing' }, { status: 500 });
+    }
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ----- 2. Parse and validate event -----
+    // Supports both the current Whop envelope (`type`) and the legacy one (`action`/`event`)
+    // in case your dashboard webhook is still on the older format.
+    const eventType = body?.type || body?.action || body?.event;
+    console.log(`📌 Event type: ${eventType}`);
+
+    const MEMBERSHIP_ACTIVE_EVENTS = ['membership.activated', 'membership.went_active'];
+    if (!MEMBERSHIP_ACTIVE_EVENTS.includes(eventType)) {
+      console.log(`ℹ️ Unhandled event: ${eventType} – ignoring`);
+      return NextResponse.json({ received: true, message: 'Event ignored' }, { status: 200 });
+    }
+
+    // ----- 3. Extract membership and metadata -----
+    const membershipId = body?.data?.id;
+    if (!membershipId) {
+      console.warn('⚠️ No membership ID found in payload');
+      return NextResponse.json({ received: true, message: 'Missing membership ID' }, { status: 200 });
+    }
+
+    // Metadata can live in a few different places depending on API version — check them all.
+    const metadata =
+      body?.data?.metadata ||
+      body?.data?.plan?.metadata ||
+      body?.data?.product?.metadata ||
+      body?.metadata ||
+      {};
+    const orderId = metadata?.order_id || body?.data?.order_id;
+    const sessionId = metadata?.session_id || metadata?.api_key;
+
+    console.log(`🔍 Membership ID: ${membershipId}, Order ID: ${orderId}, Session: ${sessionId}`);
+    if (!orderId) {
+      console.warn('⚠️ No order_id present in metadata — make sure create-checkout is actually sending one if you rely on this for DB updates.');
+    }
+
+    // ----- 4. Action A: Update local database (deliver asset) -----
+    if (orderId) {
+      const { error } = await supabase
+        .from('ledger_orders')
+        .update({
+          payment_status: 'completed',
+          whop_membership_id: membershipId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('order_id', orderId);
+
+      if (error) {
+        console.error('❌ Supabase update failed:', error);
+      } else {
+        console.log(`✅ Supabase order ${orderId} marked as completed`);
+      }
+    } else {
+      console.warn('⚠️ No order_id in metadata – skipping DB update');
+    }
+
+    // ----- 5. Action B: Immediately revoke the Whop membership -----
+    // This is the part that was broken. Two fixes vs the old code:
+    //   1. URL now includes /api/ ( https://api.whop.com/api/v1/... not https://api.whop.com/v1/... )
+    //   2. Body now sends `cancellation_mode: "immediate"` (the real param), not `cancel_at_period_end`
+    const whopSecret = process.env.WHOP_API_KEY;
+    if (!whopSecret) {
+      console.error('❌ WHOP_API_KEY not set – cannot revoke membership');
+      return NextResponse.json({ received: true, message: 'API key missing' }, { status: 200 });
+    }
+
+    const cancelUrl = `https://api.whop.com/api/v1/memberships/${membershipId}/cancel`;
+    console.log(`🔫 Revoking membership ${membershipId} immediately...`);
+
+    const cancelResponse = await fetch(cancelUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${whopSecret}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        cancellation_mode: 'immediate', // <-- correct param name/value, immediate = revoke access now
+      }),
+    });
+
+    const cancelData = await cancelResponse.json();
+
+    if (cancelResponse.ok) {
+      console.log(`✅ Membership ${membershipId} revoked successfully. Status: ${cancelData?.status}, valid: ${cancelData?.valid}`);
+    } else {
+      console.error(`❌ Failed to revoke membership ${membershipId} (status ${cancelResponse.status}):`, JSON.stringify(cancelData));
+      // Still return 200 so Whop doesn't hammer retries — but this error will now actually
+      // show up clearly in your logs instead of silently doing nothing.
+    }
+
+    // ----- 6. Return success to Whop -----
+    return NextResponse.json(
+      {
+        received: true,
+        membership_id: membershipId,
+        revoked: cancelResponse.ok,
+      },
+      { status: 200 }
+    );
+  } catch (err: any) {
+    console.error('❌ Webhook critical failure:', err.message || err);
+    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 200 });
   }
 }
 </file>
@@ -1614,7 +1760,7 @@ export default function Home() {
   };
 
   // ============================================================
-  // 🔥 PAYMENT HANDLER – calls the API and shows error details
+  // 🔥 PAYMENT HANDLER – DIRECT PRODUCT PAGE REDIRECT (FIXED)
   // ============================================================
   const handlePayAndDownload = async () => {
     if (!stats) return;
@@ -1627,6 +1773,7 @@ export default function Home() {
 
     const price = stats.price;
 
+    // Save pending data for the cross‑tab handshake
     const pendingData = {
       rows: parsedData,
       fileName: fileName || 'statement',
@@ -1636,26 +1783,23 @@ export default function Home() {
     localStorage.setItem('pendingDownload', JSON.stringify(pendingData));
     localStorage.removeItem('whop_payment_complete');
 
-    try {
-      const response = await fetch('/api/v1/create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ price, fileName, formats, bank: selectedBank }),
-      });
+    // ✅ CORRECT PRODUCT PAGE URLS
+    const productPageMap: Record<number, string> = {
+      5: 'https://whop.com/vercel-3f41/swiftledger-starter-1-5-pages/',
+      25: 'https://whop.com/vercel-3f41/swiftledger-business-6-20-pages/',
+      45: 'https://whop.com/vercel-3f41/swiftledger-corporate-21-50-pages/',
+      85: 'https://whop.com/vercel-3f41/swiftledger-enterprise-51-pages/',
+    };
 
-      const data = await response.json();
-
-      if (!response.ok || !data.url) {
-        // data.error now contains the full error message from Whop
-        throw new Error(data.error || 'Checkout creation failed');
-      }
-
-      window.open(data.url, '_blank');
-    } catch (error: any) {
-      console.error('Checkout creation error:', error);
-      alert(`Error starting checkout: ${error.message}`);
+    const productUrl = productPageMap[price];
+    if (!productUrl) {
+      alert('Product page not found for this price.');
       localStorage.removeItem('pendingDownload');
+      return;
     }
+
+    console.log('🔗 Opening product page:', productUrl);
+    window.open(productUrl, '_blank');
   };
 
   const toggleFormat = (format: string) => {

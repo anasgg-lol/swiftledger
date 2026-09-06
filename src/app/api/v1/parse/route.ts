@@ -11,48 +11,82 @@ if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class {};
 }
 
-// Helper to parse strings cleanly into decimal numbers for precise balancing.
-// ✅ FIX: now sign-aware for the two other common negative-number conventions
-// banks use besides a leading "-": accounting parentheses "(1,234.56)" and a
-// trailing "DR"/"CR" suffix. Previously the regex silently stripped both the
-// parens and the letters, throwing away the sign entirely.
-function cleanMathValue(val: string): number {
-  if (!val) return 0;
-  let str = String(val).trim();
-  let negative = false;
+// ================================================================
+// 🔥 SUPER-ROBUST NUMERIC PARSER – handles international formats
+// ================================================================
+function parseNumericString(raw: string): number {
+  if (!raw) return 0;
+  let str = String(raw).trim();
 
+  // 1️⃣ Detect sign from parentheses, DR/CR, or leading minus/dash
+  let negative = false;
   if (/^\(.*\)$/.test(str)) {
     negative = true;
     str = str.slice(1, -1);
   }
-
   const upper = str.toUpperCase();
   if (/(^|\s)DR(\s|$)/.test(upper)) negative = true;
   if (/(^|\s)CR(\s|$)/.test(upper)) negative = false;
 
-  const cleaned = str.replace(/[^0-9.\-]/g, '');
-  let num = parseFloat(cleaned) || 0;
+  // 2️⃣ Strip currency symbols and non‑numeric chars, keep separators
+  let cleaned = str.replace(/[^0-9,.\-]/g, '');
+
+  // 3️⃣ Detect locale: if last '.' is before last ',', it's European
+  const lastDot = cleaned.lastIndexOf('.');
+  const lastComma = cleaned.lastIndexOf(',');
+  let decimalSeparator = '.';
+  let thousandsSeparator = ',';
+  if (lastDot > lastComma) {
+    decimalSeparator = '.';
+    thousandsSeparator = ',';
+  } else if (lastComma > lastDot) {
+    decimalSeparator = ',';
+    thousandsSeparator = '.';
+  } else {
+    // Only one separator type – treat as decimal if ≤2 digits after
+    const sep = lastDot !== -1 ? '.' : ',';
+    const parts = cleaned.split(sep);
+    if (parts.length === 2 && parts[1].length <= 2) {
+      decimalSeparator = sep;
+    } else {
+      thousandsSeparator = sep;
+    }
+  }
+
+  // 4️⃣ Remove thousands separators
+  if (thousandsSeparator === ',') cleaned = cleaned.replace(/,/g, '');
+  else if (thousandsSeparator === '.') cleaned = cleaned.replace(/\./g, '');
+
+  // 5️⃣ Replace decimal separator with '.'
+  if (decimalSeparator === ',') cleaned = cleaned.replace(',', '.');
+
+  // 6️⃣ Parse as float
+  let num = parseFloat(cleaned);
+  if (isNaN(num)) num = 0;
   if (negative) num = -Math.abs(num);
   return num;
 }
 
-// ✅ NEW: normalizes the DISPLAYED amount string to a plain leading-minus format
-// ("-$8,200.00") whenever it detects parentheses or a DR/CR suffix, so every
-// output format (CSV/Xero/OFX/QBO) gets a consistent signed number instead of
-// notation those formats don't understand. Leaves already-normal strings
-// (with commas, existing "$", existing "-") completely untouched.
+// ✅ Replaces the old cleanMathValue – uses the new robust parser
+function cleanMathValue(val: string): number {
+  if (!val) return 0;
+  return parseNumericString(String(val).trim());
+}
+
+// ✅ Enhanced normalizeAmountSign with dash handling
 function normalizeAmountSign(raw: string): string {
   if (!raw) return raw;
   let str = String(raw).trim();
   let negative = false;
   let changed = false;
 
+  // Parentheses
   if (/^\(.*\)$/.test(str)) {
     negative = true;
     str = str.slice(1, -1).trim();
     changed = true;
   }
-
+  // DR/CR suffix
   if (/(^|\s)DR(\s|$)/i.test(str)) {
     negative = true;
     str = str.replace(/\s*DR\s*$/i, '').trim();
@@ -63,18 +97,18 @@ function normalizeAmountSign(raw: string): string {
     changed = true;
   }
 
-  if (!changed) return raw; // nothing unusual detected — leave formatting exactly as-is
+  // If no sign change detected, return as‑is
+  if (!changed) return raw;
 
-  const alreadyNegative = str.startsWith('-');
-  if (negative && !alreadyNegative) {
-    str = str.replace(/^(\$?)/, '-$1');
+  // Remove any existing leading dash variants and re‑apply if negative
+  str = str.replace(/^[–—−-]\s*/, '');
+  if (negative && !str.startsWith('-')) {
+    str = '-' + str;
   }
   return str;
 }
 
 // ============ COLUMN HEADER KEYWORD DICTIONARIES ============
-// Broadened so the geometry pass recognizes column headers across different
-// bank statement wordings, not just "Debit"/"Credit"/"Description".
 const DATE_KW = ['DATE'];
 const DESC_KW = ['DESC', 'PARTICULAR', 'NARRATIV', 'DETAIL', 'MEMO', 'REMARK'];
 const DEBIT_KW = ['DEBIT', 'WITHDRAWAL', 'WITHDRAWALS'];
@@ -148,7 +182,6 @@ async function performLocalOCR(buffer: Buffer): Promise<{ pages: any[], rawText:
   const pages: any[] = [];
 
   try {
-    // ✅ FIX: Force type assignment to 'any' to completely bypass tesseract type system boundaries
     const result: any = await worker.recognize(buffer);
     const lines = result?.data?.lines || [];
     const structuredLines: any[] = [];
@@ -162,9 +195,8 @@ async function performLocalOCR(buffer: Buffer): Promise<{ pages: any[], rawText:
         if (textStr) {
           rawText += textStr + ' ';
           const bbox = wordItem?.bbox || { x0: 0 };
-          // Map layout bounding boxes directly to artificial spatial X/Y coordinate nodes
           pageTokens.push({
-            x: (bbox.x0 / 10), // Normalize layout constraints to match native pdf2json grids
+            x: (bbox.x0 / 10),
             text: textStr
           });
         }
@@ -183,6 +215,7 @@ async function performLocalOCR(buffer: Buffer): Promise<{ pages: any[], rawText:
 
   return { pages, rawText };
 }
+
 // ============ MAIN SERVICE CORE ============
 export async function POST(req: Request) {
   try {
@@ -196,7 +229,6 @@ export async function POST(req: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     
-    // ✅ FIX: Define the model API parameters globally at the top of the function to prevent scoping errors
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${WORKING_MODEL}:generateContent?key=${apiKey}`;
     const basePrompt = `Extract ALL financial transaction rows from this document data context.
     Return ONLY a JSON array where each object strictly matches this schema mapping layout:
@@ -208,7 +240,6 @@ export async function POST(req: Request) {
     let { pages, rawText } = await extractGeometryNatively(buffer);
     let engineUsed = 'SwiftLedger Coordinate Geometry Core';
     
-    // If native text layer length is 0, activate the Local OCR Driveway instantly! [pdf_XZdc6j.pdf]
     if (pages.length === 0 || rawText.trim().length < 50) {
       console.log('📸 FLAT SCANNED IMAGE PDF DETECTED. ACTIVATING ZERO-COST LOCAL OCR DRIVEWAY CONTEXT...');
       engineUsed = 'SwiftLedger Local High-Speed OCR Pipeline';
@@ -227,8 +258,6 @@ export async function POST(req: Request) {
         let globalTxList: any[] = [];
         let totalMathChecksPassed = true;
 
-        // Column x-positions persist across pages — many statements only print the
-        // column header once, on page 1.
         let dateX = 0, descX = 10, debitX = 0, creditX = 0, amtX = 35, balX = 45;
         let hasDebitCol = false, hasCreditCol = false, columnsCalibrated = false;
 
@@ -254,8 +283,6 @@ export async function POST(req: Request) {
               return;
             }
 
-            // Nothing calibrated yet anywhere in the document (still in title/address/summary
-            // lines before the table starts) — skip rather than guess with defaults.
             if (!columnsCalibrated) return;
 
             const dualColumnMode = hasDebitCol && hasCreditCol;
@@ -290,8 +317,6 @@ export async function POST(req: Request) {
               else if (creditVal !== 0) rowAmt = normalizeAmountSign(rowCredit);
               else rowAmt = '';
             } else {
-              // ✅ FIX: single-signed-amount statements can still use parentheses or a
-              // DR/CR suffix instead of a plain "-" — normalize those here too.
               rowAmt = normalizeAmountSign(rowAmt);
             }
 
@@ -376,6 +401,20 @@ export async function POST(req: Request) {
       for (const segment of resolvedSegments) {
         if (Array.isArray(segment)) combinedTransactions = combinedTransactions.concat(segment);
       }
+    }
+
+    // ================================================================
+    // 🔥 SAFETY NET: if nothing was extracted, return a clear failure
+    // ================================================================
+    if (combinedTransactions.length === 0) {
+      console.warn('⚠️ No transactions could be extracted from the document.');
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'No transaction data found in the uploaded document. Please check the file format and try again.' 
+        },
+        { status: 422 }
+      );
     }
 
     // ============ 📊 STEP 3: THE ACCOUNTANT (NORMALIZE ALL FIELDS NATIVELY) ============
