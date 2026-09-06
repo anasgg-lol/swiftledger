@@ -70,6 +70,48 @@ function generateXeroCSV(rows: Transaction[], bank: string = ''): string {
   return [headers.join(','), ...csvRows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
 }
 
+// ============ ROBUST DATE PARSER (never throws) ============
+// ✅ FIX: native `new Date(...)` cannot handle ordinal day suffixes ("1st", "23rd", "31st")
+// — a very common real-world statement date format — and throws when you then call
+// .toISOString() on the resulting Invalid Date. That single throw was killing the ENTIRE
+// OFX/QBO export for every row, not just the bad one. This never throws: it strips ordinal
+// suffixes, tries a few common explicit layouts, and worst-case falls back to a harmless
+// placeholder date for that one row instead of aborting the whole file.
+function safeParseDate(dateStr: string): Date {
+  if (!dateStr) return new Date();
+
+  // Strip ordinal suffixes: "1st" -> "1", "23rd" -> "23", "31st" -> "31"
+  let cleaned = String(dateStr).trim().replace(/(\d{1,2})(st|nd|rd|th)\b/gi, '$1');
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+  let parsed = new Date(cleaned);
+  if (!isNaN(parsed.getTime())) return parsed;
+
+  // Try common explicit numeric layouts: DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, DD-MM-YYYY
+  const numMatch = cleaned.match(/^(\d{1,4})[\/\-.](\d{1,2})[\/\-.](\d{1,4})$/);
+  if (numMatch) {
+    const [, a, b, c] = numMatch;
+    let year: string, month: string, day: string;
+    if (a.length === 4) {
+      year = a; month = b; day = c;
+    } else if (c.length === 4) {
+      year = c;
+      // Ambiguous DD/MM vs MM/DD — if the first part can't be a month, it must be the day
+      if (parseInt(a, 10) > 12) { day = a; month = b; } else { month = a; day = b; }
+    } else {
+      year = `20${c.padStart(2, '0')}`;
+      month = a; day = b;
+    }
+    const attempt = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    if (!isNaN(attempt.getTime())) return attempt;
+  }
+
+  // Give up gracefully — never throw. A placeholder date lets the export still
+  // succeed for every other row instead of failing the whole file over one bad date.
+  console.warn(`⚠️ Could not parse date "${dateStr}" — using placeholder for this row.`);
+  return new Date();
+}
+
 function generateOFX(rows: Transaction[], bank: string = ''): string {
   if (!rows.length) return '';
   const ofxHeader = `OFXHEADER:100
@@ -106,8 +148,8 @@ NEWFILEUID:NONE
 <ACCTTYPE>CHECKING
 </BANKACCTFROM>
 <BANKTRANLIST>
-<DTSTART>${new Date(rows[0]?.date || Date.now()).toISOString().split('T')[0]}
-<DTEND>${new Date(rows[rows.length - 1]?.date || Date.now()).toISOString().split('T')[0]}
+<DTSTART>${safeParseDate(rows[0]?.date || '').toISOString().split('T')[0]}
+<DTEND>${safeParseDate(rows[rows.length - 1]?.date || '').toISOString().split('T')[0]}
 `;
   let ofxBody = '';
   rows.forEach((r, i) => {
@@ -115,7 +157,7 @@ NEWFILEUID:NONE
     const isCredit = amount >= 0;
     const type = isCredit ? 'CREDIT' : 'DEBIT';
     const amtStr = Math.abs(amount).toFixed(2);
-    const date = new Date(r.date);
+    const date = safeParseDate(r.date);
     const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
     const timeStr = '000000';
     ofxBody += `
@@ -149,7 +191,7 @@ Dated\tDescription\tWithdrawal\tDeposit\tBalance
     const amount = parseCurrency(r.amount);
     const isCredit = amount >= 0;
     const amtStr = Math.abs(amount).toFixed(2);
-    const date = new Date(r.date);
+    const date = safeParseDate(r.date);
     const dateStr = date.toISOString().split('T')[0];
     qbo += `${dateStr}\t${r.description}\t${isCredit ? '' : amtStr}\t${isCredit ? amtStr : ''}\t${parseCurrency(r.balance).toFixed(2)}\n`;
   });
