@@ -76,7 +76,6 @@ async function extractGeometryNatively(buffer: Buffer): Promise<{ pages: any[], 
 }
 
 // ============ 📸 LOCAL HIGH-SPEED OCR PIPELINE (SCANNED FALLBACK OVERRIDE) ============
-// ============ 📸 LOCAL HIGH-SPEED OCR PIPELINE (SCANNED FALLBACK OVERRIDE) ============
 async function performLocalOCR(buffer: Buffer): Promise<{ pages: any[], rawText: string }> {
   console.log('🛠️ INITIALIZING INDEPENDENT BACKEND OCR WORKER MATRIX...');
   const worker = await createWorker('eng');
@@ -137,7 +136,8 @@ export async function POST(req: Request) {
     const basePrompt = `Extract ALL financial transaction rows from this document data context.
     Return ONLY a JSON array where each object strictly matches this schema mapping layout:
     [{"date":"date","type":"type","description":"desc","amount":"amount","balance":"balance"}]
-    CRITICAL: Extract EVERY single printed transaction row. Do not truncate, skip, or summarize anything.`;
+    CRITICAL: Extract EVERY single printed transaction row. Do not truncate, skip, or summarize anything.
+    CRITICAL SIGN RULE: If the statement has separate "Debit"/"Withdrawal" and "Credit"/"Deposit" columns, you MUST return "amount" as a NEGATIVE number for any value found in the Debit/Withdrawal column, and a POSITIVE number for any value found in the Credit/Deposit column. Never drop the dollar figure into the description field — it must always appear in the "amount" field, signed correctly.`;
 
     // Attempt standard fast vector geometry pass first
     let { pages, rawText } = await extractGeometryNatively(buffer);
@@ -164,8 +164,12 @@ export async function POST(req: Request) {
         for (let p = 0; p < pages.length; p++) {
           const pageData = pages[p];
           let pageTxList: any[] = [];
-          
-          let dateX = 0, descX = 10, amtX = 35, balX = 45; 
+
+          // NOTE: dual-column statements (Debit AND Credit as two separate columns) need
+          // two tracked x-positions, not one. Single-column statements (one signed "Amount"
+          // column) still fall back to the original amtX behavior below.
+          let dateX = 0, descX = 10, debitX = 0, creditX = 0, amtX = 35, balX = 45;
+          let hasDebitCol = false, hasCreditCol = false;
 
           pageData.structuredLines.forEach((line: any[]) => {
             let combinedLineText = line.map((t: any) => t.text).join(' ').toUpperCase();
@@ -175,21 +179,41 @@ export async function POST(req: Request) {
                 const text = token.text.toUpperCase();
                 if (text.includes('DATE')) dateX = token.x;
                 if (text.includes('DESC') || text.includes('PARTICULARS')) descX = token.x;
-                if (text.includes('DEBIT') || text.includes('CREDIT') || text.includes('AMOUNT')) amtX = token.x;
+                // ✅ FIX: track Debit and Credit as two SEPARATE columns instead of one
+                // shared amtX that the Credit header was silently overwriting.
+                if (text.includes('DEBIT') || text.includes('WITHDRAWAL')) { debitX = token.x; hasDebitCol = true; }
+                if (text.includes('CREDIT') || text.includes('DEPOSIT')) { creditX = token.x; hasCreditCol = true; }
+                if (text.includes('AMOUNT') && !text.includes('DEBIT') && !text.includes('CREDIT')) amtX = token.x;
                 if (text.includes('BALANCE')) balX = token.x;
               });
               return; 
             }
 
-            let rowDate = '', rowDesc = '', rowAmt = '', rowBal = '';
+            const dualColumnMode = hasDebitCol && hasCreditCol;
+            // Where the description zone ends: the earlier of the two amount-like columns
+            const descEndX = dualColumnMode ? Math.min(debitX, creditX) : amtX;
+
+            let rowDate = '', rowDesc = '', rowDebit = '', rowCredit = '', rowAmt = '', rowBal = '';
             line.forEach((token: any) => {
               if (Math.abs(token.x - dateX) < 4) rowDate = token.text;
-              else if (token.x >= descX && token.x < amtX - 2) rowDesc += token.text + ' ';
-              else if (token.x >= amtX - 2 && token.x < balX - 2) rowAmt = token.text;
+              else if (token.x >= descX && token.x < descEndX - 2) rowDesc += token.text + ' ';
+              else if (dualColumnMode && token.x >= debitX - 2 && token.x < creditX - 2) rowDebit = token.text;
+              else if (dualColumnMode && token.x >= creditX - 2 && token.x < balX - 2) rowCredit = token.text;
+              else if (!dualColumnMode && token.x >= amtX - 2 && token.x < balX - 2) rowAmt = token.text;
               else if (token.x >= balX - 2) rowBal = token.text;
             });
 
             rowDesc = rowDesc.trim();
+
+            // ✅ FIX: combine the two columns into one correctly-signed amount.
+            // Debit = money out (negative). Credit = money in (positive).
+            if (dualColumnMode) {
+              const debitVal = cleanMathValue(rowDebit);
+              const creditVal = cleanMathValue(rowCredit);
+              if (debitVal !== 0) rowAmt = `-${rowDebit.replace(/^-/, '')}`;
+              else if (creditVal !== 0) rowAmt = rowCredit;
+              else rowAmt = '';
+            }
 
             if (rowDate && (rowAmt || rowBal)) {
               pageTxList.push({ date: rowDate, type: 'Transaction', description: rowDesc, amount: rowAmt, balance: rowBal });
