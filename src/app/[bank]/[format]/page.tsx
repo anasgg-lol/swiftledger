@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import React from 'react';
-
+import { banks, formats, getBank, getFormat } from '@/app/lib/seo-data';
 // ============ HARDCODED DATA ============
 const BANKS = [
   { name: 'Chase', slug: 'chase' },
