@@ -14,7 +14,6 @@ export default function AllPagesHub() {
   return (
     <main className="min-h-screen bg-[#030712] text-white p-6">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium uppercase tracking-wider mb-4">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -34,7 +33,6 @@ export default function AllPagesHub() {
           </Link>
         </div>
 
-        {/* Banks List */}
         <div className="space-y-8">
           {banks.map((bank) => (
             <section key={bank.slug} className="bg-slate-900/40 border border-slate-800/50 rounded-2xl p-5">
@@ -52,7 +50,11 @@ export default function AllPagesHub() {
                   <Link
                     key={`${bank.slug}-${format.slug}`}
                     href={`/${bank.slug}/${format.slug}`}
-                    className="text-[10px] text-slate-400 hover:text-emerald-400 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/50 hover:border-emerald-500/30 transition-all"
+                    className={`text-[10px] px-3 py-1.5 rounded-full border transition-all ${
+                      format.type === 'native'
+                        ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20'
+                        : 'text-slate-400 bg-slate-800/60 border-slate-700/50 hover:text-emerald-400 hover:border-emerald-500/30'
+                    }`}
                   >
                     {bank.name} → {format.label}
                   </Link>
@@ -62,7 +64,6 @@ export default function AllPagesHub() {
           ))}
         </div>
 
-        {/* Footer */}
         <div className="mt-12 pt-6 border-t border-slate-800/50 text-center">
           <p className="text-[10px] text-slate-500">
             © {new Date().getFullYear()} SwiftLedger — Bank Statement Parsing, Automated.

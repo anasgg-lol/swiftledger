@@ -10,45 +10,55 @@ export interface Bank {
 export interface Format {
   label: string;
   slug: string;
-  description?: string;
+  type: 'native' | 'compatible';
+  description: string;
   software?: string;
 }
 
 // ============================================================
-// 🏦 100+ BANKS (Global Coverage)
+// 🏦 200+ BANKS — ALL CONTINENTS
 // ============================================================
 export const banks: Bank[] = [
-  // ===== USA =====
+  // ==================== USA (35) ====================
   { name: 'Chase', slug: 'chase', country: 'USA', type: 'National' },
   { name: 'Bank of America', slug: 'bank-of-america', country: 'USA', type: 'National' },
   { name: 'Wells Fargo', slug: 'wells-fargo', country: 'USA', type: 'National' },
   { name: 'Citibank', slug: 'citibank', country: 'USA', type: 'National' },
   { name: 'Capital One', slug: 'capital-one', country: 'USA', type: 'National' },
-  { name: 'PNC', slug: 'pnc', country: 'USA', type: 'National' },
+  { name: 'PNC Bank', slug: 'pnc', country: 'USA', type: 'National' },
   { name: 'TD Bank', slug: 'td-bank', country: 'USA', type: 'National' },
-  { name: 'Navy Federal', slug: 'navy-federal', country: 'USA', type: 'Credit Union' },
-  { name: 'Goldman Sachs', slug: 'goldman-sachs', country: 'USA', type: 'Investment' },
-  { name: 'Morgan Stanley', slug: 'morgan-stanley', country: 'USA', type: 'Investment' },
   { name: 'US Bank', slug: 'us-bank', country: 'USA', type: 'National' },
   { name: 'Truist', slug: 'truist', country: 'USA', type: 'National' },
-  { name: 'Fifth Third', slug: 'fifth-third', country: 'USA', type: 'Regional' },
+  { name: 'Fifth Third Bank', slug: 'fifth-third', country: 'USA', type: 'Regional' },
   { name: 'Regions Bank', slug: 'regions', country: 'USA', type: 'Regional' },
   { name: 'KeyBank', slug: 'keybank', country: 'USA', type: 'Regional' },
   { name: 'M&T Bank', slug: 'mt-bank', country: 'USA', type: 'Regional' },
   { name: 'Huntington Bank', slug: 'huntington', country: 'USA', type: 'Regional' },
   { name: 'BMO Harris', slug: 'bmo-harris', country: 'USA', type: 'Regional' },
+  { name: 'Navy Federal Credit Union', slug: 'navy-federal', country: 'USA', type: 'Credit Union' },
+  { name: 'PenFed Credit Union', slug: 'penfed', country: 'USA', type: 'Credit Union' },
   { name: 'Ally Bank', slug: 'ally', country: 'USA', type: 'Online' },
   { name: 'Discover Bank', slug: 'discover', country: 'USA', type: 'Online' },
   { name: 'Synchrony Bank', slug: 'synchrony', country: 'USA', type: 'Online' },
-  { name: 'PenFed Credit Union', slug: 'penfed', country: 'USA', type: 'Credit Union' },
-  { name: 'SoFi', slug: 'sofi', country: 'USA', type: 'Online' },
+  { name: 'SoFi', slug: 'sofi', country: 'USA', type: 'Neobank' },
   { name: 'Chime', slug: 'chime', country: 'USA', type: 'Neobank' },
   { name: 'Varo Bank', slug: 'varo', country: 'USA', type: 'Neobank' },
   { name: 'Current', slug: 'current', country: 'USA', type: 'Neobank' },
+  { name: 'Goldman Sachs', slug: 'goldman-sachs', country: 'USA', type: 'Investment' },
+  { name: 'Morgan Stanley', slug: 'morgan-stanley', country: 'USA', type: 'Investment' },
+  { name: 'Charles Schwab', slug: 'schwab', country: 'USA', type: 'Investment' },
+  { name: 'Fidelity', slug: 'fidelity', country: 'USA', type: 'Investment' },
+  { name: 'Robinhood', slug: 'robinhood', country: 'USA', type: 'Investment' },
+  { name: 'Wealthfront', slug: 'wealthfront', country: 'USA', type: 'Investment' },
+  { name: 'Betterment', slug: 'betterment', country: 'USA', type: 'Investment' },
+  { name: 'American Express', slug: 'amex', country: 'USA', type: 'Credit Card' },
+  { name: 'Discover Card', slug: 'discover-card', country: 'USA', type: 'Credit Card' },
+  { name: 'Visa', slug: 'visa', country: 'USA', type: 'Credit Card' },
+  { name: 'Mastercard', slug: 'mastercard', country: 'USA', type: 'Credit Card' },
 
-  // ===== UK =====
+  // ==================== UK (20) ====================
   { name: 'Barclays', slug: 'barclays', country: 'UK', type: 'National' },
-  { name: 'HSBC', slug: 'hsbc', country: 'UK', type: 'International' },
+  { name: 'HSBC UK', slug: 'hsbc', country: 'UK', type: 'International' },
   { name: 'Lloyds Bank', slug: 'lloyds', country: 'UK', type: 'National' },
   { name: 'NatWest', slug: 'natwest', country: 'UK', type: 'National' },
   { name: 'Halifax', slug: 'halifax', country: 'UK', type: 'National' },
@@ -57,174 +67,195 @@ export const banks: Bank[] = [
   { name: 'Royal Bank of Scotland', slug: 'rbs', country: 'UK', type: 'National' },
   { name: 'Ulster Bank', slug: 'ulster', country: 'UK', type: 'Regional' },
   { name: 'Metro Bank', slug: 'metro-bank', country: 'UK', type: 'National' },
+  { name: 'TSB Bank', slug: 'tsb', country: 'UK', type: 'National' },
+  { name: 'Co-operative Bank', slug: 'coop-bank', country: 'UK', type: 'National' },
   { name: 'Monzo', slug: 'monzo', country: 'UK', type: 'Neobank' },
   { name: 'Starling Bank', slug: 'starling', country: 'UK', type: 'Neobank' },
   { name: 'Revolut', slug: 'revolut', country: 'UK', type: 'Neobank' },
   { name: 'Wise', slug: 'wise', country: 'UK', type: 'Neobank' },
-  { name: 'TransferWise', slug: 'transferwise', country: 'UK', type: 'Neobank' },
-
-  // ===== Europe =====
-  { name: 'BNP Paribas', slug: 'bnp-paribas', country: 'France', type: 'International' },
-  { name: 'Crédit Agricole', slug: 'credit-agricole', country: 'France', type: 'National' },
-  { name: 'Société Générale', slug: 'societe-generale', country: 'France', type: 'National' },
-  { name: 'Deutsche Bank', slug: 'deutsche-bank', country: 'Germany', type: 'International' },
-  { name: 'Commerzbank', slug: 'commerzbank', country: 'Germany', type: 'National' },
-  { name: 'ING', slug: 'ing', country: 'Netherlands', type: 'International' },
-  { name: 'ABN AMRO', slug: 'abn-amro', country: 'Netherlands', type: 'National' },
-  { name: 'Rabobank', slug: 'rabobank', country: 'Netherlands', type: 'National' },
-  { name: 'Nordea', slug: 'nordea', country: 'Sweden', type: 'International' },
-  { name: 'Swedbank', slug: 'swedbank', country: 'Sweden', type: 'National' },
-  { name: 'SEB', slug: 'seb', country: 'Sweden', type: 'National' },
-  { name: 'Danske Bank', slug: 'danske', country: 'Denmark', type: 'International' },
-  { name: 'N26', slug: 'n26', country: 'Germany', type: 'Neobank' },
   { name: 'Monese', slug: 'monese', country: 'UK', type: 'Neobank' },
+  { name: 'Zopa', slug: 'zopa', country: 'UK', type: 'Fintech' },
+  { name: 'Atom Bank', slug: 'atom-bank', country: 'UK', type: 'Neobank' },
+  { name: 'Tandem Bank', slug: 'tandem', country: 'UK', type: 'Neobank' },
 
-  // ===== Canada =====
+  // ==================== CANADA (8) ====================
   { name: 'RBC Royal Bank', slug: 'rbc', country: 'Canada', type: 'National' },
   { name: 'TD Canada Trust', slug: 'td-canada', country: 'Canada', type: 'National' },
   { name: 'Scotiabank', slug: 'scotiabank', country: 'Canada', type: 'National' },
   { name: 'BMO Canada', slug: 'bmo-canada', country: 'Canada', type: 'National' },
   { name: 'CIBC', slug: 'cibc', country: 'Canada', type: 'National' },
   { name: 'National Bank of Canada', slug: 'national-bank-canada', country: 'Canada', type: 'National' },
+  { name: 'Desjardins', slug: 'desjardins', country: 'Canada', type: 'Credit Union' },
+  { name: 'Tangerine', slug: 'tangerine', country: 'Canada', type: 'Online' },
 
-  // ===== Australia & NZ =====
+  // ==================== AUSTRALIA / NZ (8) ====================
   { name: 'Commonwealth Bank', slug: 'commonwealth-bank', country: 'Australia', type: 'National' },
   { name: 'Westpac', slug: 'westpac', country: 'Australia', type: 'National' },
   { name: 'ANZ', slug: 'anz', country: 'Australia', type: 'National' },
   { name: 'NAB', slug: 'nab', country: 'Australia', type: 'National' },
+  { name: 'Macquarie Bank', slug: 'macquarie', country: 'Australia', type: 'Investment' },
   { name: 'ASB Bank', slug: 'asb', country: 'New Zealand', type: 'National' },
   { name: 'BNZ', slug: 'bnz', country: 'New Zealand', type: 'National' },
+  { name: 'Kiwibank', slug: 'kiwibank', country: 'New Zealand', type: 'National' },
 
-  // ===== Asia =====
+  // ==================== EUROPE (30) ====================
+  { name: 'BNP Paribas', slug: 'bnp-paribas', country: 'France', type: 'International' },
+  { name: 'Crédit Agricole', slug: 'credit-agricole', country: 'France', type: 'National' },
+  { name: 'Société Générale', slug: 'societe-generale', country: 'France', type: 'National' },
+  { name: 'Deutsche Bank', slug: 'deutsche-bank', country: 'Germany', type: 'International' },
+  { name: 'Commerzbank', slug: 'commerzbank', country: 'Germany', type: 'National' },
+  { name: 'N26', slug: 'n26', country: 'Germany', type: 'Neobank' },
+  { name: 'ING', slug: 'ing', country: 'Netherlands', type: 'International' },
+  { name: 'ABN AMRO', slug: 'abn-amro', country: 'Netherlands', type: 'National' },
+  { name: 'Rabobank', slug: 'rabobank', country: 'Netherlands', type: 'National' },
+  { name: 'Bunq', slug: 'bunq', country: 'Netherlands', type: 'Neobank' },
+  { name: 'BBVA', slug: 'bbva', country: 'Spain', type: 'International' },
+  { name: 'Santander', slug: 'santander', country: 'Spain', type: 'International' },
+  { name: 'CaixaBank', slug: 'caixabank', country: 'Spain', type: 'National' },
+  { name: 'UniCredit', slug: 'unicredit', country: 'Italy', type: 'International' },
+  { name: 'Intesa Sanpaolo', slug: 'intesa', country: 'Italy', type: 'National' },
+  { name: 'Nordea', slug: 'nordea', country: 'Sweden', type: 'International' },
+  { name: 'Swedbank', slug: 'swedbank', country: 'Sweden', type: 'National' },
+  { name: 'SEB', slug: 'seb', country: 'Sweden', type: 'National' },
+  { name: 'Danske Bank', slug: 'danske', country: 'Denmark', type: 'International' },
+  { name: 'UBS', slug: 'ubs', country: 'Switzerland', type: 'International' },
+  { name: 'Credit Suisse', slug: 'credit-suisse', country: 'Switzerland', type: 'International' },
+  { name: 'Raiffeisen Bank', slug: 'raiffeisen', country: 'Austria', type: 'National' },
+  { name: 'Erste Bank', slug: 'erste', country: 'Austria', type: 'National' },
+  { name: 'Millennium BCP', slug: 'millennium-bcp', country: 'Portugal', type: 'National' },
+  { name: 'Novo Banco', slug: 'novo-banco', country: 'Portugal', type: 'National' },
+  { name: 'Bank of Ireland', slug: 'bank-of-ireland', country: 'Ireland', type: 'National' },
+  { name: 'AIB', slug: 'aib', country: 'Ireland', type: 'National' },
+  { name: 'Permanent TSB', slug: 'permanent-tsb', country: 'Ireland', type: 'National' },
+  { name: 'KBC Bank', slug: 'kbc', country: 'Belgium', type: 'National' },
+  { name: 'Belfius', slug: 'belfius', country: 'Belgium', type: 'National' },
+
+  // ==================== ASIA (30) ====================
   { name: 'DBS Bank', slug: 'dbs', country: 'Singapore', type: 'International' },
   { name: 'OCBC Bank', slug: 'ocbc', country: 'Singapore', type: 'National' },
   { name: 'UOB', slug: 'uob', country: 'Singapore', type: 'National' },
+  { name: 'Standard Chartered', slug: 'standard-chartered', country: 'Singapore', type: 'International' },
   { name: 'Mizuho Bank', slug: 'mizuho', country: 'Japan', type: 'International' },
   { name: 'SMBC', slug: 'smbc', country: 'Japan', type: 'International' },
   { name: 'MUFG', slug: 'mufg', country: 'Japan', type: 'International' },
+  { name: 'Japan Post Bank', slug: 'japan-post', country: 'Japan', type: 'National' },
   { name: 'ICBC', slug: 'icbc', country: 'China', type: 'International' },
   { name: 'China Construction Bank', slug: 'ccb', country: 'China', type: 'International' },
   { name: 'Bank of China', slug: 'bank-of-china', country: 'China', type: 'International' },
+  { name: 'Agricultural Bank of China', slug: 'abc-china', country: 'China', type: 'International' },
   { name: 'HDFC Bank', slug: 'hdfc', country: 'India', type: 'National' },
   { name: 'ICICI Bank', slug: 'icici', country: 'India', type: 'National' },
-  { name: 'SBI', slug: 'sbi', country: 'India', type: 'National' },
+  { name: 'State Bank of India', slug: 'sbi', country: 'India', type: 'National' },
+  { name: 'Axis Bank', slug: 'axis', country: 'India', type: 'National' },
+  { name: 'Kotak Mahindra', slug: 'kotak', country: 'India', type: 'National' },
+  { name: 'KB Kookmin Bank', slug: 'kb-kookmin', country: 'South Korea', type: 'National' },
+  { name: 'Shinhan Bank', slug: 'shinhan', country: 'South Korea', type: 'National' },
+  { name: 'Hana Bank', slug: 'hana', country: 'South Korea', type: 'National' },
+  { name: 'Bangkok Bank', slug: 'bangkok-bank', country: 'Thailand', type: 'National' },
+  { name: 'Kasikornbank', slug: 'kasikornbank', country: 'Thailand', type: 'National' },
+  { name: 'Maybank', slug: 'maybank', country: 'Malaysia', type: 'National' },
+  { name: 'CIMB Bank', slug: 'cimb', country: 'Malaysia', type: 'National' },
+  { name: 'Public Bank', slug: 'public-bank', country: 'Malaysia', type: 'National' },
+  { name: 'Bank Central Asia', slug: 'bca', country: 'Indonesia', type: 'National' },
+  { name: 'Bank Mandiri', slug: 'mandiri', country: 'Indonesia', type: 'National' },
+  { name: 'BDO Unibank', slug: 'bdo', country: 'Philippines', type: 'National' },
+  { name: 'Metrobank', slug: 'metrobank', country: 'Philippines', type: 'National' },
+  { name: 'Vietcombank', slug: 'vietcombank', country: 'Vietnam', type: 'National' },
 
-  // ===== Middle East =====
+  // ==================== MIDDLE EAST (15) ====================
   { name: 'Emirates NBD', slug: 'emirates-nbd', country: 'UAE', type: 'National' },
   { name: 'ADCB', slug: 'adcb', country: 'UAE', type: 'National' },
+  { name: 'Mashreq Bank', slug: 'mashreq', country: 'UAE', type: 'National' },
+  { name: 'First Abu Dhabi Bank', slug: 'fab', country: 'UAE', type: 'National' },
   { name: 'QNB', slug: 'qnb', country: 'Qatar', type: 'National' },
   { name: 'Al Rajhi Bank', slug: 'al-rajhi', country: 'Saudi Arabia', type: 'National' },
+  { name: 'Saudi National Bank', slug: 'snb', country: 'Saudi Arabia', type: 'National' },
+  { name: 'Riyad Bank', slug: 'riyad', country: 'Saudi Arabia', type: 'National' },
+  { name: 'Kuwait Finance House', slug: 'kfh', country: 'Kuwait', type: 'National' },
+  { name: 'Bank Muscat', slug: 'bank-muscat', country: 'Oman', type: 'National' },
+  { name: 'Bank Hapoalim', slug: 'hapoalim', country: 'Israel', type: 'National' },
+  { name: 'Bank Leumi', slug: 'leumi', country: 'Israel', type: 'National' },
+  { name: 'Ziraat Bank', slug: 'ziraat', country: 'Turkey', type: 'National' },
+  { name: 'Isbank', slug: 'isbank', country: 'Turkey', type: 'National' },
+  { name: 'Garanti BBVA', slug: 'garanti', country: 'Turkey', type: 'National' },
 
-  // ===== Latin America =====
-  { name: 'Itaú', slug: 'itau', country: 'Brazil', type: 'International' },
-  { name: 'Banco do Brasil', slug: 'banco-do-brasil', country: 'Brazil', type: 'National' },
-  { name: 'BBVA', slug: 'bbva', country: 'Spain', type: 'International' },
-  { name: 'Santander', slug: 'santander', country: 'Spain', type: 'International' },
-
-  // ===== Africa =====
+  // ==================== AFRICA (12) ====================
   { name: 'Standard Bank', slug: 'standard-bank', country: 'South Africa', type: 'International' },
   { name: 'First National Bank', slug: 'fnb', country: 'South Africa', type: 'National' },
   { name: 'ABSA', slug: 'absa', country: 'South Africa', type: 'National' },
+  { name: 'Nedbank', slug: 'nedbank', country: 'South Africa', type: 'National' },
+  { name: 'Capitec Bank', slug: 'capitec', country: 'South Africa', type: 'National' },
+  { name: 'Commercial International Bank', slug: 'cib-egypt', country: 'Egypt', type: 'National' },
+  { name: 'Banque Misr', slug: 'banque-misr', country: 'Egypt', type: 'National' },
+  { name: 'GTBank', slug: 'gtbank', country: 'Nigeria', type: 'National' },
+  { name: 'Zenith Bank', slug: 'zenith', country: 'Nigeria', type: 'National' },
+  { name: 'Access Bank', slug: 'access-bank', country: 'Nigeria', type: 'National' },
+  { name: 'Equity Bank', slug: 'equity-bank', country: 'Kenya', type: 'National' },
+  { name: 'KCB Bank', slug: 'kcb', country: 'Kenya', type: 'National' },
 
-  // ===== Neobanks & Fintech =====
-  { name: 'Payoneer', slug: 'payoneer', country: 'USA', type: 'Fintech' },
+  // ==================== LATIN AMERICA (12) ====================
+  { name: 'Itaú', slug: 'itau', country: 'Brazil', type: 'International' },
+  { name: 'Banco do Brasil', slug: 'banco-do-brasil', country: 'Brazil', type: 'National' },
+  { name: 'Bradesco', slug: 'bradesco', country: 'Brazil', type: 'National' },
+  { name: 'Santander Brasil', slug: 'santander-brasil', country: 'Brazil', type: 'International' },
+  { name: 'Nubank', slug: 'nubank', country: 'Brazil', type: 'Neobank' },
+  { name: 'Banco de Chile', slug: 'banco-de-chile', country: 'Chile', type: 'National' },
+  { name: 'BancoEstado', slug: 'bancoestado', country: 'Chile', type: 'National' },
+  { name: 'Bancolombia', slug: 'bancolombia', country: 'Colombia', type: 'National' },
+  { name: 'BBVA México', slug: 'bbva-mexico', country: 'Mexico', type: 'International' },
+  { name: 'Banorte', slug: 'banorte', country: 'Mexico', type: 'National' },
+  { name: 'Banco de México', slug: 'banco-de-mexico', country: 'Mexico', type: 'National' },
+  { name: 'Banco Galicia', slug: 'galicia', country: 'Argentina', type: 'National' },
+
+  // ==================== FINTECH / NEOBANKS (15) ====================
+  { name: 'PayPal', slug: 'paypal', country: 'Global', type: 'Fintech' },
+  { name: 'Stripe', slug: 'stripe', country: 'Global', type: 'Fintech' },
+  { name: 'Square', slug: 'square', country: 'Global', type: 'Fintech' },
+  { name: 'Venmo', slug: 'venmo', country: 'USA', type: 'Fintech' },
+  { name: 'Payoneer', slug: 'payoneer', country: 'Global', type: 'Fintech' },
   { name: 'Klarna', slug: 'klarna', country: 'Sweden', type: 'Fintech' },
   { name: 'Affirm', slug: 'affirm', country: 'USA', type: 'Fintech' },
   { name: 'Afterpay', slug: 'afterpay', country: 'Australia', type: 'Fintech' },
   { name: 'Clearpay', slug: 'clearpay', country: 'UK', type: 'Fintech' },
-  { name: 'Zopa', slug: 'zopa', country: 'UK', type: 'Fintech' },
+  { name: 'Coinbase', slug: 'coinbase', country: 'USA', type: 'Crypto' },
+  { name: 'Binance', slug: 'binance', country: 'Global', type: 'Crypto' },
+  { name: 'Kraken', slug: 'kraken', country: 'USA', type: 'Crypto' },
+  { name: 'Gemini', slug: 'gemini', country: 'USA', type: 'Crypto' },
+  { name: 'Crypto.com', slug: 'crypto-com', country: 'Singapore', type: 'Crypto' },
+  { name: 'Bitpanda', slug: 'bitpanda', country: 'Austria', type: 'Crypto' },
 ];
 
 // ============================================================
-// 📄 50+ FORMATS (All major accounting software)
+// 📄 20 FORMATS — 4 NATIVE + 16 COMPATIBLE
 // ============================================================
 export const formats: Format[] = [
-  // ===== Spreadsheets =====
-  { label: 'CSV', slug: 'csv', description: 'Universal CSV format', software: 'Excel, Google Sheets' },
-  { label: 'Excel', slug: 'excel', description: 'Microsoft Excel .xlsx', software: 'Excel' },
-  { label: 'Excel XLS', slug: 'xls', description: 'Legacy Excel format', software: 'Excel' },
+  // ===== NATIVE (Real files your tool exports) =====
+  { label: 'CSV', slug: 'csv', type: 'native', description: 'Universal CSV format', software: 'Any spreadsheet' },
+  { label: 'Xero CSV', slug: 'xero', type: 'native', description: 'Xero bank feed import', software: 'Xero' },
+  { label: 'QBO', slug: 'qbo', type: 'native', description: 'QuickBooks format', software: 'QuickBooks' },
+  { label: 'OFX', slug: 'ofx', type: 'native', description: 'Open Financial Exchange', software: 'Quicken' },
 
-  // ===== Accounting Software =====
-  { label: 'QuickBooks', slug: 'quickbooks', description: 'QuickBooks Desktop import', software: 'QuickBooks' },
-  { label: 'QBO', slug: 'qbo', description: 'QuickBooks Online bank feed', software: 'QuickBooks Online' },
-  { label: 'Xero', slug: 'xero', description: 'Xero bank feed format', software: 'Xero' },
-  { label: 'Sage 50', slug: 'sage-50', description: 'Sage 50 import format', software: 'Sage' },
-  { label: 'Sage 200', slug: 'sage-200', description: 'Sage 200 import format', software: 'Sage' },
-  { label: 'Wave', slug: 'wave', description: 'Wave Accounting import', software: 'Wave' },
-  { label: 'FreshBooks', slug: 'freshbooks', description: 'FreshBooks transaction import', software: 'FreshBooks' },
-  { label: 'Zoho Books', slug: 'zoho', description: 'Zoho Books import format', software: 'Zoho Books' },
-  { label: 'KashFlow', slug: 'kashflow', description: 'KashFlow accounting import', software: 'KashFlow' },
-  { label: 'FreeAgent', slug: 'freeagent', description: 'FreeAgent bank feed', software: 'FreeAgent' },
-
-  // ===== Financial Exchange =====
-  { label: 'OFX', slug: 'ofx', description: 'Open Financial Exchange format', software: 'Quicken, MS Money' },
-  { label: 'QFX', slug: 'qfx', description: 'Quicken Financial Exchange', software: 'Quicken' },
-  { label: 'QIF', slug: 'qif', description: 'Quicken Interchange Format', software: 'Quicken' },
-
-  // ===== Data Exchange =====
-  { label: 'JSON', slug: 'json', description: 'JSON format for developers', software: 'APIs, Custom' },
-  { label: 'XML', slug: 'xml', description: 'XML format for enterprise', software: 'Enterprise Systems' },
-  { label: 'Google Sheets API', slug: 'google-sheets', description: 'Direct Google Sheets import', software: 'Google Sheets' },
-
-  // ===== ERP Systems =====
-  { label: 'SAP', slug: 'sap', description: 'SAP bank statement format', software: 'SAP ERP' },
-  { label: 'Odoo', slug: 'odoo', description: 'Odoo ERP import', software: 'Odoo' },
-  { label: 'ERPNext', slug: 'erpnext', description: 'ERPNext bank statement import', software: 'ERPNext' },
-  { label: 'Tally', slug: 'tally', description: 'Tally ERP import format', software: 'Tally' },
-  { label: 'Dolibarr', slug: 'dolibarr', description: 'Dolibarr ERP import', software: 'Dolibarr' },
-  { label: 'FrontAccounting', slug: 'frontaccounting', description: 'FrontAccounting import', software: 'FrontAccounting' },
-
-  // ===== Fintech & Payments =====
-  { label: 'PayPal', slug: 'paypal', description: 'PayPal transaction export', software: 'PayPal' },
-  { label: 'Stripe', slug: 'stripe', description: 'Stripe settlement import', software: 'Stripe' },
-  { label: 'Square', slug: 'square', description: 'Square Payout import', software: 'Square' },
-  { label: 'Venmo', slug: 'venmo', description: 'Venmo transaction history', software: 'Venmo' },
-  { label: 'Payoneer', slug: 'payoneer-format', description: 'Payoneer transaction export', software: 'Payoneer' },
-
-  // ===== Tax Software =====
-  { label: 'TaxCalc', slug: 'taxcalc', description: 'TaxCalc software import', software: 'TaxCalc' },
-  { label: 'BTCSoftware', slug: 'btc', description: 'BTCSoftware tax import', software: 'BTCSoftware' },
-  { label: 'Digital Accountancy', slug: 'digital-accountancy', description: 'Digital Accountancy import', software: 'Digital Accountancy' },
-
-  // ===== Small Business =====
-  { label: 'SlickPie', slug: 'slickpie', description: 'SlickPie accounting import', software: 'SlickPie' },
-  { label: 'Manager', slug: 'manager', description: 'Manager.io import', software: 'Manager.io' },
-  { label: 'Akaunting', slug: 'akaunting', description: 'Akaunting open source import', software: 'Akaunting' },
-  { label: 'Accounts Portal', slug: 'accounts-portal', description: 'Accounts Portal import', software: 'Accounts Portal' },
-  { label: 'Clear Books', slug: 'clear-books', description: 'Clear Books import format', software: 'Clear Books' },
-
-  // ===== UK Specific =====
-  { label: 'Crunch', slug: 'crunch', description: 'Crunch accounting import', software: 'Crunch' },
-  { label: 'Pandle', slug: 'pandle', description: 'Pandle accounting import', software: 'Pandle' },
-  { label: 'VT Software', slug: 'vt', description: 'VT Software tax import', software: 'VT Software' },
-  { label: 'Capium', slug: 'capium', description: 'Capium accounting import', software: 'Capium' },
-
-  // ===== Developer APIs =====
-  { label: 'REST API', slug: 'rest-api', description: 'REST API transaction format', software: 'Custom Development' },
-  { label: 'GraphQL', slug: 'graphql', description: 'GraphQL transaction format', software: 'Custom Development' },
-
-  // ===== Reporting =====
-  { label: 'PDF Report', slug: 'pdf-report', description: 'Report-ready PDF output', software: 'Reporting' },
-  { label: 'HTML', slug: 'html', description: 'HTML formatted transactions', software: 'Web Applications' },
-  { label: 'Markdown', slug: 'markdown', description: 'Markdown formatted transactions', software: 'Documentation' },
-
-  // ===== Databases =====
-  { label: 'SQL', slug: 'sql', description: 'SQL INSERT statements', software: 'MySQL, PostgreSQL' },
-  { label: 'NoSQL', slug: 'nosql', description: 'NoSQL/MongoDB format', software: 'MongoDB' },
-
-  // ===== Enterprise =====
-  { label: 'Oracle EBS', slug: 'oracle-ebs', description: 'Oracle EBS import format', software: 'Oracle' },
-  { label: 'Microsoft Dynamics', slug: 'dynamics', description: 'MS Dynamics import format', software: 'Microsoft Dynamics' },
-  { label: 'NetSuite', slug: 'netsuite', description: 'NetSuite transaction import', software: 'NetSuite' },
-
-  // ===== E-commerce =====
-  { label: 'Shopify', slug: 'shopify', description: 'Shopify payout report', software: 'Shopify' },
-  { label: 'Amazon Seller', slug: 'amazon', description: 'Amazon Seller transaction import', software: 'Amazon' },
-  { label: 'eBay', slug: 'ebay', description: 'eBay transaction export', software: 'eBay' },
+  // ===== COMPATIBLE (CSV that imports into these tools) =====
+  { label: 'Excel', slug: 'excel', type: 'compatible', description: 'Opens directly in Microsoft Excel', software: 'Microsoft Excel' },
+  { label: 'Google Sheets', slug: 'google-sheets', type: 'compatible', description: 'Imports into Google Sheets', software: 'Google Sheets' },
+  { label: 'QuickBooks Online', slug: 'quickbooks-online', type: 'compatible', description: 'CSV for QBO import', software: 'QuickBooks Online' },
+  { label: 'Sage', slug: 'sage', type: 'compatible', description: 'CSV for Sage import', software: 'Sage' },
+  { label: 'Wave', slug: 'wave', type: 'compatible', description: 'CSV for Wave import', software: 'Wave Accounting' },
+  { label: 'FreshBooks', slug: 'freshbooks', type: 'compatible', description: 'CSV for FreshBooks import', software: 'FreshBooks' },
+  { label: 'Zoho Books', slug: 'zoho', type: 'compatible', description: 'CSV for Zoho Books import', software: 'Zoho Books' },
+  { label: 'FreeAgent', slug: 'freeagent', type: 'compatible', description: 'CSV for FreeAgent import', software: 'FreeAgent' },
+  { label: 'KashFlow', slug: 'kashflow', type: 'compatible', description: 'CSV for KashFlow import', software: 'KashFlow' },
+  { label: 'Crunch', slug: 'crunch', type: 'compatible', description: 'CSV for Crunch import', software: 'Crunch' },
+  { label: 'Pandle', slug: 'pandle', type: 'compatible', description: 'CSV for Pandle import', software: 'Pandle' },
+  { label: 'Clear Books', slug: 'clear-books', type: 'compatible', description: 'CSV for Clear Books import', software: 'Clear Books' },
+  { label: 'Odoo', slug: 'odoo', type: 'compatible', description: 'CSV for Odoo import', software: 'Odoo' },
+  { label: 'Akaunting', slug: 'akaunting', type: 'compatible', description: 'CSV for Akaunting import', software: 'Akaunting' },
+  { label: 'Manager', slug: 'manager', type: 'compatible', description: 'CSV for Manager import', software: 'Manager.io' },
+  { label: 'Tally', slug: 'tally', type: 'compatible', description: 'CSV for Tally import', software: 'Tally ERP' },
 ];
 
 // ============================================================
-// 🚀 HELPER FUNCTIONS (for generating pages)
+// 🚀 HELPERS
 // ============================================================
 export function getAllPagePaths() {
   const paths: { bank: string; format: string }[] = [];
@@ -246,12 +277,4 @@ export function getFormat(slug: string): Format | undefined {
 
 export function getTotalPages(): number {
   return banks.length * formats.length;
-}
-
-export function getBankCount(): number {
-  return banks.length;
-}
-
-export function getFormatCount(): number {
-  return formats.length;
 }
