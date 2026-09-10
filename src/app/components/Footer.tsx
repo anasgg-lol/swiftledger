@@ -30,6 +30,7 @@ export default function Footer() {
             <ul className="space-y-2.5 text-sm">
               <li><Link href="/features" className="text-slate-400 hover:text-emerald-400 transition-colors">Features</Link></li>
               <li><Link href="/pricing" className="text-slate-400 hover:text-emerald-400 transition-colors">Pricing</Link></li>
+              <li><Link href="/all-pages" className="text-slate-400 hover:text-emerald-400 transition-colors">All Converters</Link></li>
             </ul>
           </div>
 
@@ -38,7 +39,6 @@ export default function Footer() {
             <ul className="space-y-2.5 text-sm">
               <li><Link href="/terms" className="text-slate-400 hover:text-emerald-400 transition-colors">Terms of Service</Link></li>
               <li><Link href="/privacy" className="text-slate-400 hover:text-emerald-400 transition-colors">Privacy Policy</Link></li>
-              <li><Link href="/contact" className="text-slate-400 hover:text-emerald-400 transition-colors">Contact</Link></li>
             </ul>
           </div>
         </div>

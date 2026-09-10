@@ -393,7 +393,15 @@ export default async function SEOPage({
           </button>
           <p className="text-[8px] text-slate-500 text-center mt-1">Live Support</p>
         </div>
-
+        {/* Hub Link */}
+        <div className="w-full max-w-4xl mx-auto z-10 mt-6 text-center">
+          <Link
+            href="/all-pages"
+            className="text-[10px] text-slate-500 hover:text-emerald-400 transition-colors"
+          >
+            Browse all bank statement converters →
+          </Link>
+        </div>
         {/* ============================================================ */}
         {/* ====== FOOTER ====== */}
         {/* ============================================================ */}

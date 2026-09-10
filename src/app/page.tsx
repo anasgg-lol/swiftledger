@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';              // ← ADD THIS LINE
 import Footer from './components/Footer';
 
 interface Transaction {
@@ -777,7 +778,16 @@ export default function Home() {
         </div>
       )}
 
-      <div className="w-full max-w-6xl mx-auto mt-16 z-10">
+      <div className="w-full max-w-6xl mx-auto z-10 mt-8 text-center">
+        <Link
+          href="/all-pages"
+          className="inline-block text-xs text-slate-500 hover:text-emerald-400 transition-colors border border-slate-800/50 px-4 py-2 rounded-full"
+        >
+          Browse all {`5,000+`} bank statement converters →
+        </Link>
+      </div>
+
+      <div className="w-full max-w-6xl mx-auto mt-8 z-10">
         <Footer />
       </div>
     </main>
