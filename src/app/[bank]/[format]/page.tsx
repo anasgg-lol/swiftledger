@@ -71,6 +71,7 @@ export default async function SEOPage({
     '@type': 'Product',
     name: `SwiftLedger ${bankName} to ${formatLabel} Converter`,
     description: `Convert ${bankName} bank statements to ${formatLabel} with 99% accuracy.`,
+    image: 'https://swiftledger-seven.vercel.app/og-image.png', // ADD THIS
     offers: {
       '@type': 'Offer',
       price: '5',
@@ -78,11 +79,7 @@ export default async function SEOPage({
       priceValidUntil: '2026-12-31',
       availability: 'https://schema.org/InStock',
     },
-    aggregateRating: {
-      '@type': 'AggregateRating',
-      ratingValue: '4.9',
-      ratingCount: '527',
-    },
+    // REMOVED aggregateRating — add it back only when you have real, visible reviews
   };
 
   return (
