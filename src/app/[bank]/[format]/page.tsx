@@ -167,7 +167,27 @@ export default async function SEOPage({
             </div>
           </div>
         </div>
-
+                {/* ============================================================ */}
+        {/* ====== UNIQUE CONTENT BLOCK (Bing/SEO) ====== */}
+        {/* ============================================================ */}
+        <div className="w-full max-w-3xl mx-auto z-10 mt-8">
+          <div className="bg-slate-900/40 border border-slate-800/50 rounded-2xl p-5">
+            <h2 className="text-sm font-bold text-white mb-3">
+              About Converting {bankName} Statements to {formatLabel}
+            </h2>
+            <div className="space-y-3 text-[11px] text-slate-400 leading-relaxed">
+              <p>
+                {bankName} is one of the {bankObj?.country === 'USA' ? 'largest banks in the United States' : bankObj?.country === 'UK' ? 'leading banks in the United Kingdom' : bankObj?.country === 'Canada' ? 'top financial institutions in Canada' : bankObj?.country === 'Australia' ? 'major banks in Australia' : `leading financial institutions in ${bankObj?.country || 'the world'}`}, serving millions of customers. Statements from {bankName} typically contain transaction dates, descriptions, amounts, and running balances across multiple pages. Our parser is specifically tuned to recognize {bankName}'s unique statement layout and extract every transaction with 99% accuracy.
+              </p>
+              <p>
+                When you convert a {bankName} statement to {formatLabel}, you get a clean, structured file ready for {formatObj?.software || 'your accounting software'}. This eliminates hours of manual data entry and reduces the risk of errors. Whether you're a {bankObj?.type === 'Credit Union' ? 'credit union member' : bankObj?.type === 'Neobank' ? 'digital banking customer' : bankObj?.type === 'Investment' ? 'investor' : 'accountant or business owner'}, our {formatLabel} export works seamlessly with your existing workflow.
+              </p>
+              <p>
+                Unlike subscription-based tools that charge $25–$500/month, SwiftLedger uses a simple pay-per-use model. Upload your {bankName} PDF, preview the extracted transactions for free, and only pay when you're ready to download the {formatLabel} file. Your documents are processed in real-time and immediately deleted — we never store your financial data.
+              </p>
+            </div>
+          </div>
+        </div>
         {/* ============================================================ */}
         {/* ====== MAIN CTA ====== */}
         {/* ============================================================ */}
